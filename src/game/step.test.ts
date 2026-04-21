@@ -432,4 +432,89 @@ describe("step", () => {
     expect(next.phase).toBe("waveClear");
     expect(next.hud.score).toBe(220);
   });
+
+  describe("phase transition integration", () => {
+    it("freezes the current simulation after pausing from active play", () => {
+      const playing = step(createPlayingState(), 16, {
+        ...EMPTY_INPUT,
+        firePressed: true
+      });
+      const paused = step(playing, 16, { ...EMPTY_INPUT, pausePressed: true });
+
+      expect(paused.phase).toBe("paused");
+      expect(paused.invaders).toHaveLength(INVADER_ROWS * INVADER_COLS);
+      expect(paused.projectiles).toHaveLength(1);
+
+      const frozen = step(paused, 200, EMPTY_INPUT);
+
+      expect(frozen.phase).toBe("paused");
+      expect(frozen.player.x).toBe(paused.player.x);
+      expect(frozen.invaders[0]?.x).toBe(paused.invaders[0]?.x);
+      expect(frozen.projectiles[0]?.y).toBe(paused.projectiles[0]?.y);
+    });
+
+    it("toggles back to playing when P is pressed again from pause", () => {
+      const playing = step(createPlayingState(), 16, {
+        ...EMPTY_INPUT,
+        firePressed: true
+      });
+      const paused = step(playing, 16, { ...EMPTY_INPUT, pausePressed: true });
+
+      expect(paused.phase).toBe("paused");
+      expect(paused.projectiles).toHaveLength(1);
+
+      const resumed = step(paused, 16, { ...EMPTY_INPUT, pausePressed: true });
+
+      expect(resumed.phase).toBe("playing");
+      expect(resumed.player.x).toBe(paused.player.x);
+      expect(resumed.invaders[0]?.x).toBe(paused.invaders[0]?.x);
+      expect(resumed.projectiles[0]?.y).toBe(paused.projectiles[0]?.y);
+    });
+
+    it("reaches game over after an invader collision takes the final life", () => {
+      const base = createPlayingState({ lives: 1 });
+      const invader = base.invaders[0];
+      expect(invader).toBeDefined();
+      const finalLifeState = {
+        ...base,
+        invaders:
+          invader === undefined
+            ? []
+            : [
+                {
+                  ...invader,
+                  x: base.player.x,
+                  y: base.player.y
+                }
+              ]
+      };
+
+      const lifeLost = step(finalLifeState, 0, EMPTY_INPUT);
+
+      expect(lifeLost.phase).toBe("lifeLost");
+      expect(lifeLost.hud.lives).toBe(0);
+
+      const gameOver = step(lifeLost, LIFE_LOST_DURATION_MS, EMPTY_INPUT);
+
+      expect(gameOver.phase).toBe("gameOver");
+      expect(gameOver.hud.lives).toBe(0);
+    });
+
+    it("resets to a fresh first wave when fire is pressed from game over", () => {
+      const state = createGameState({
+        phase: "gameOver",
+        wave: 4,
+        score: 650,
+        lives: 0
+      });
+
+      const next = step(state, 16, { ...EMPTY_INPUT, firePressed: true });
+
+      expect(next.phase).toBe("playing");
+      expect(next.hud.score).toBe(0);
+      expect(next.hud.lives).toBe(STARTING_LIVES);
+      expect(next.hud.wave).toBe(1);
+      expect(next.invaders).toHaveLength(INVADER_ROWS * INVADER_COLS);
+    });
+  });
 });
