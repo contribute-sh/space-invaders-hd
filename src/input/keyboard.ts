@@ -11,8 +11,10 @@ export function createKeyboardController(target: Window = window): KeyboardContr
     right: false,
     fire: false,
     pause: false,
+    mute: false,
     fireEdge: false,
-    pauseEdge: false
+    pauseEdge: false,
+    muteEdge: false
   };
 
   const onKeyDown = (event: KeyboardEvent): void => {
@@ -39,6 +41,13 @@ export function createKeyboardController(target: Window = window): KeyboardContr
         held.pause = true;
         event.preventDefault();
         break;
+      case "KeyM":
+        if (!held.mute) {
+          held.muteEdge = true;
+        }
+        held.mute = true;
+        event.preventDefault();
+        break;
       default:
         break;
     }
@@ -62,6 +71,10 @@ export function createKeyboardController(target: Window = window): KeyboardContr
         held.pause = false;
         event.preventDefault();
         break;
+      case "KeyM":
+        held.mute = false;
+        event.preventDefault();
+        break;
       default:
         break;
     }
@@ -80,11 +93,13 @@ export function createKeyboardController(target: Window = window): KeyboardContr
       const snapshot: Input = {
         moveX,
         firePressed: held.fireEdge,
-        pausePressed: held.pauseEdge
+        pausePressed: held.pauseEdge,
+        mutePressed: held.muteEdge
       };
 
       held.fireEdge = false;
       held.pauseEdge = false;
+      held.muteEdge = false;
 
       return snapshot;
     }
