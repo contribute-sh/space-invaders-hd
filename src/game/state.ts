@@ -10,6 +10,7 @@ export type Input = {
   moveX: -1 | 0 | 1;
   firePressed: boolean;
   pausePressed: boolean;
+  mutePressed?: boolean;
 };
 
 export type Arena = {
@@ -114,7 +115,8 @@ export const LIFE_LOST_DURATION_MS = 900;
 export const EMPTY_INPUT: Input = {
   moveX: 0,
   firePressed: false,
-  pausePressed: false
+  pausePressed: false,
+  mutePressed: false
 };
 
 const ROW_POINTS = [50, 40, 30, 20, 10] as const;
