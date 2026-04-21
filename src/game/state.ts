@@ -1,0 +1,254 @@
+export type GamePhase =
+  | "start"
+  | "playing"
+  | "lifeLost"
+  | "paused"
+  | "waveClear"
+  | "gameOver";
+
+export type Input = {
+  moveX: -1 | 0 | 1;
+  firePressed: boolean;
+  pausePressed: boolean;
+};
+
+export type Arena = {
+  width: number;
+  height: number;
+  floorY: number;
+  padding: number;
+};
+
+export type Player = {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  speed: number;
+  shootCooldownMs: number;
+};
+
+export type Invader = {
+  id: number;
+  row: number;
+  col: number;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  points: number;
+};
+
+export type Projectile = {
+  id: number;
+  owner: "player";
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  velocityY: number;
+  active: boolean;
+};
+
+export type Formation = {
+  direction: -1 | 1;
+  speed: number;
+  descendStep: number;
+  leftBound: number;
+  rightBound: number;
+};
+
+export type HudState = {
+  score: number;
+  lives: number;
+  wave: number;
+};
+
+export type GameState = {
+  phase: GamePhase;
+  arena: Arena;
+  player: Player;
+  invaders: Invader[];
+  projectiles: Projectile[];
+  formation: Formation;
+  hud: HudState;
+  frame: number;
+  nextProjectileId: number;
+  transitionTimerMs: number;
+};
+
+export type GameStateSeed = {
+  wave?: number;
+  score?: number;
+  lives?: number;
+  phase?: GamePhase;
+  frame?: number;
+  nextProjectileId?: number;
+  transitionTimerMs?: number;
+};
+
+export const ARENA_WIDTH = 960;
+export const ARENA_HEIGHT = 720;
+export const ARENA_PADDING = 56;
+export const FLOOR_Y = 664;
+export const PLAYER_WIDTH = 76;
+export const PLAYER_HEIGHT = 30;
+export const PLAYER_SPEED = 420;
+export const PLAYER_SHOOT_COOLDOWN_MS = 240;
+export const STARTING_LIVES = 3;
+export const PROJECTILE_WIDTH = 6;
+export const PROJECTILE_HEIGHT = 18;
+export const PROJECTILE_SPEED = -720;
+export const INVADER_ROWS = 5;
+export const INVADER_COLS = 11;
+export const INVADER_WIDTH = 48;
+export const INVADER_HEIGHT = 30;
+export const INVADER_GAP_X = 18;
+export const INVADER_GAP_Y = 18;
+export const INVADER_START_Y = 108;
+export const INVADER_BASE_SPEED = 72;
+export const INVADER_WAVE_SPEED_STEP = 12;
+export const INVADER_DESCEND_STEP = 24;
+export const LIFE_LOST_DURATION_MS = 900;
+
+export const EMPTY_INPUT: Input = {
+  moveX: 0,
+  firePressed: false,
+  pausePressed: false
+};
+
+const ROW_POINTS = [50, 40, 30, 20, 10] as const;
+
+export function createInitialGameState(): GameState {
+  return createGameState({ phase: "start" });
+}
+
+export function createPlayingState(
+  seed: Omit<GameStateSeed, "phase"> = {}
+): GameState {
+  return createGameState({ ...seed, phase: "playing" });
+}
+
+export function createGameState(seed: GameStateSeed = {}): GameState {
+  const arena = createArena();
+  const wave = seed.wave ?? 1;
+  const score = seed.score ?? 0;
+  const lives = seed.lives ?? STARTING_LIVES;
+  const invaders = createInvaders(arena, wave);
+  const nextProjectileId = seed.nextProjectileId ?? 1;
+
+  return {
+    phase: seed.phase ?? "start",
+    arena,
+    player: createPlayer(arena),
+    invaders,
+    projectiles: [],
+    formation: createFormation(arena, wave),
+    hud: {
+      score,
+      lives,
+      wave
+    },
+    frame: seed.frame ?? 0,
+    nextProjectileId,
+    transitionTimerMs: seed.transitionTimerMs ?? 0
+  };
+}
+
+export function createArena(): Arena {
+  return {
+    width: ARENA_WIDTH,
+    height: ARENA_HEIGHT,
+    floorY: FLOOR_Y,
+    padding: ARENA_PADDING
+  };
+}
+
+export function createPlayer(arena: Arena): Player {
+  return {
+    x: (arena.width - PLAYER_WIDTH) / 2,
+    y: arena.floorY - PLAYER_HEIGHT,
+    width: PLAYER_WIDTH,
+    height: PLAYER_HEIGHT,
+    speed: PLAYER_SPEED,
+    shootCooldownMs: 0
+  };
+}
+
+export function createFormation(arena: Arena, wave: number): Formation {
+  return {
+    direction: 1,
+    speed: INVADER_BASE_SPEED + Math.max(0, wave - 1) * INVADER_WAVE_SPEED_STEP,
+    descendStep: INVADER_DESCEND_STEP,
+    leftBound: arena.padding,
+    rightBound: arena.width - arena.padding
+  };
+}
+
+export function createInvaders(arena: Arena, wave: number): Invader[] {
+  const invaders: Invader[] = [];
+  const totalWidth =
+    INVADER_COLS * INVADER_WIDTH + (INVADER_COLS - 1) * INVADER_GAP_X;
+  const startX = (arena.width - totalWidth) / 2;
+  const startY = INVADER_START_Y + Math.min(wave - 1, 4) * 8;
+  let id = 1;
+
+  for (let row = 0; row < INVADER_ROWS; row += 1) {
+    for (let col = 0; col < INVADER_COLS; col += 1) {
+      invaders.push({
+        id,
+        row,
+        col,
+        x: startX + col * (INVADER_WIDTH + INVADER_GAP_X),
+        y: startY + row * (INVADER_HEIGHT + INVADER_GAP_Y),
+        width: INVADER_WIDTH,
+        height: INVADER_HEIGHT,
+        points: ROW_POINTS[row] ?? 10
+      });
+      id += 1;
+    }
+  }
+
+  return invaders;
+}
+
+export function createPlayerProjectile(
+  state: GameState,
+  x: number,
+  y: number
+): Projectile {
+  return {
+    id: state.nextProjectileId,
+    owner: "player",
+    x,
+    y,
+    width: PROJECTILE_WIDTH,
+    height: PROJECTILE_HEIGHT,
+    velocityY: PROJECTILE_SPEED,
+    active: true
+  };
+}
+
+export function getPlayerMinX(arena: Arena): number {
+  return arena.padding;
+}
+
+export function getPlayerMaxX(arena: Arena, player: Player): number {
+  return arena.width - arena.padding - player.width;
+}
+
+export function getFormationSpeed(invaderCount: number, baseSpeed: number): number {
+  const totalInvaders = INVADER_ROWS * INVADER_COLS;
+  const eliminated = totalInvaders - invaderCount;
+  const intensity = eliminated / totalInvaders;
+
+  return baseSpeed * (1 + intensity * 1.7);
+}
+
+export function getProjectileSpawnX(player: Player): number {
+  return player.x + player.width / 2 - PROJECTILE_WIDTH / 2;
+}
+
+export function getProjectileSpawnY(player: Player): number {
+  return player.y - PROJECTILE_HEIGHT;
+}
