@@ -5,7 +5,7 @@ Build a browser-only Space Invaders MVP on a single `index.html` page using Vite
 - `src/main.ts` owns bootstrap and the fixed-timestep loop. It creates the initial `GameState`, polls the keyboard adapter each frame, advances the simulation at 60 Hz, renders the latest state, lazily initializes or resumes audio on the first user gesture, and derives audio triggers by comparing the previous and next states.
 - `src/game/state.ts` defines the core types, constants, and initial-state factory for the playfield, player, invaders, projectiles, score, lives, and phase flags, including the short post-hit `lifeLost` transition state.
 - `src/game/step.ts` is the pure simulation boundary. It applies input, movement, cooldowns, invader marching and descent, collision resolution, score/life updates, life-loss freeze timing, pause handling, wave-clear, and game-over transitions without touching DOM, audio, or timers outside the state object.
-- `src/input/keyboard.ts` converts browser key events into a typed per-frame `Input` snapshot with edge-triggered actions for fire and pause. `firePressed` doubles as the start/continue/restart action when the phase is not `playing`, so the plan stays within the constitution's MVP key set.
+- `src/input/keyboard.ts` converts browser key events into a typed per-frame `Input` snapshot with edge-triggered actions for fire and pause. `firePressed` doubles as the start/continue/restart action only in `start`, `waveClear`, and `gameOver`, while `pausePressed` alone resumes from `paused`, so the plan stays within the constitution's MVP key set without overloading pause behavior.
 - `src/render/canvas.ts` draws the entire play surface from `GameState` only: background, player, invaders, bullets, HUD, and overlay states. It should render at device-pixel-ratio scale so geometric graphics stay sharp on hi-res displays.
 - `src/audio/sfx.ts` exposes a tiny sound facade backed by `AudioContext`, oscillator nodes, and gain envelopes. Audio remains optional at runtime: if the context cannot start after a user gesture, gameplay continues silently with a visible mute indicator.
 - Data flow: `KeyboardEvent` listeners update key state -> `main.ts` snapshots input -> fixed 60 Hz `step()` updates `GameState` -> `canvas.ts` renders the state -> `main.ts` compares state transitions and asks `sfx.ts` to play `shoot`, `hit`, `playerDeath`, or `waveClear`.
@@ -74,7 +74,7 @@ Route: `/`
 Purpose: freeze simulation without losing progress.
 Primary action: `P` resumes play.
 
-Layout: the current playfield remains visible and dimmed, with a centered overlay showing `Paused`, the control reminder, and `Press P to Resume`.
+Layout: the current playfield remains visible and dimmed, with a centered overlay showing `Paused`, the control reminder, and `Press P to Resume`. `Space` remains inactive until play resumes.
 Empty / error / loading:
 - Empty: not applicable; pause only exists on top of an active game state.
 - Loading: none.
@@ -238,10 +238,10 @@ Modeling notes
    Implement `src/game/state.ts` with the typed arena, player, invader, projectile, HUD, and phase models, plus constants and an initial-state factory for the 5x11 formation and starting lives/score. Model a dedicated `lifeLost` phase with `transitionTimerMs`, and keep `invaders[]` as the live invader set rather than mixing live/dead entries.
 
 3. Implement the pure `step()` loop.
-   Add movement clamping, shooting cooldown, projectile advancement and cleanup, invader marching and descending, bullet-vs-invader collision, invader reach/player collision handling, score updates, life loss with the `lifeLost` freeze and current-wave reset, pause toggling, wave clear, and game-over transitions. Outside `playing`, reuse `firePressed` for start/continue/restart so no extra confirmation key is required.
+   Add movement clamping, shooting cooldown, projectile advancement and cleanup, invader marching and descending, bullet-vs-invader collision, invader reach/player collision handling, score updates, life loss with the `lifeLost` freeze and current-wave reset, pause toggling, wave clear, and game-over transitions. Use `pausePressed` to enter and exit `paused`, and reuse `firePressed` for start/continue/restart only in `start`, `waveClear`, and `gameOver` so no extra confirmation key is required.
 
 4. Lock down the simulation with tests.
-   Write `src/game/step.test.ts` with at least 20 cases covering input handling, no-op frames, movement bounds, fire gating, projectile cleanup, collision scoring, invader reversal and descent, invader speed-up as counts shrink, pause behavior, wave clear, and game over.
+   Write `src/game/step.test.ts` with at least 20 cases covering input handling, no-op frames, movement bounds, fire gating, projectile cleanup, collision scoring, invader reversal and descent, invader speed-up as counts shrink, pause behavior, player-death / `lifeLost` transitions (enter, freeze with input gating, reset, and zero-lives game-over branch), wave clear, and game over.
 
 5. Add the input adapter and renderer.
    Implement `src/input/keyboard.ts` for stable frame snapshots and `src/render/canvas.ts` for drawing the playfield, HUD, and overlay states with procedural geometry sized against the logical arena. Keep the HUD consistent across all states by always rendering score, wave, and lives.
@@ -257,7 +257,7 @@ Modeling notes
 - Opening the built or previewed app shows a single centered canvas game shell on route `/`.
 - The start overlay explains controls, shows the same score/wave/lives HUD used in gameplay, and `Space` starts a new run.
 - Left and right arrow keys move the player ship and clamp it within the playfield bounds.
-- Pressing `Space` fires player shots with a cooldown during play; outside `playing`, the same key starts, continues, or restarts the run. Shots travel upward and are removed when they leave the arena or hit an invader.
+- Pressing `Space` fires player shots with a cooldown during play; in `start`, `waveClear`, and `gameOver`, the same key starts, continues, or restarts the run. Shots travel upward and are removed when they leave the arena or hit an invader.
 - A 5x11 invader formation marches horizontally, descends when it hits an edge, and speeds up as `invaders.length` shrinks.
 - Player shots destroy invaders, increase score, and trigger a hit SFX.
 - If the invader formation reaches the player collision/fail line, the run enters a short `lifeLost` freeze gated by `transitionTimerMs`, plays the player-death SFX, ignores gameplay input during the freeze, and then resets the current wave to its initial 5x11 layout while preserving score; if lives reach zero, the game transitions to the game-over overlay.
@@ -266,7 +266,7 @@ Modeling notes
 - Pressing `P` pauses and resumes without advancing the simulation while paused.
 - Audio setup is attempted only from a user gesture; if the browser still rejects or lacks audio, gameplay remains playable and the UI shows a non-blocking mute indicator.
 - The renderer uses only Canvas 2D geometry and text, with no external sprite or audio files.
-- The test suite contains at least 20 assertions/cases focused on the pure simulation, not DOM rendering.
+- The test suite contains at least 20 assertions/cases focused on the pure simulation, not DOM rendering, and explicitly covers the constitution's named categories including player death through the `lifeLost` enter/freeze/reset-or-game-over flow.
 
 ## Open questions
 - The constitution asks for "modern hi-res graphics" but the MVP also restricts rendering to pure geometry and minimal shell styling. Exact art direction, palette, and typography are not specified; execution should choose a simple geometric arcade look unless product direction is provided.
@@ -282,3 +282,7 @@ Modeling notes
 - Clarified audio startup so `AudioContext` is created or resumed only from the first user gesture, with a visible mute fallback if that still fails.
 - Picked one invader representation: `invaders[]` now contains only live invaders, so collision cleanup, speed-up, and wave-clear all key off `invaders.length`.
 - Tightened execution gates by calling out the required `build` script for `pnpm build` and by elevating ESLint's zero-warning bar in the plan.
+
+## Revision notes for round 2
+- Addressed the duplicate round-2 test-coverage comments by expanding phase 4 and the acceptance criteria to name `player death` explicitly and to require `lifeLost` coverage for phase entry, freeze-time input suppression, reset with remaining lives, and the zero-lives game-over branch.
+- Resolved the pause-input contradiction by narrowing `firePressed` overlay actions to `start`, `waveClear`, and `gameOver` only, while keeping pause resume bound to `P` in the architecture, implementation, UX copy, and acceptance criteria.
