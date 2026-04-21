@@ -2,9 +2,13 @@ import { createSfxController, type SfxName } from "./audio/sfx";
 import { createInitialGameState, type GameState, type Input } from "./game/state";
 import { step } from "./game/step";
 import { createKeyboardController } from "./input/keyboard";
-import { createCanvasRenderer } from "./render/canvas";
+import { createHighScoreStore } from "./persistence";
+import { createCanvasRenderer, type CanvasRenderer } from "./render/canvas";
 
 const FIXED_TIMESTEP_MS = 1000 / 60;
+type RuntimeRenderFlags = Parameters<CanvasRenderer["render"]>[1] & {
+  highScore: number;
+};
 
 const canvas = document.querySelector<HTMLCanvasElement>("#game");
 
@@ -15,14 +19,16 @@ if (canvas === null) {
 const renderer = createRenderer(canvas);
 const keyboard = createKeyboardController(window);
 const sfx = createSfxController();
+const highScoreStore = createHighScoreStore();
 
 let state = createInitialGameState();
 let previousTimestamp = performance.now();
 let accumulator = 0;
 let bootstrapping = true;
 let audioAttempted = false;
+let highScore = highScoreStore.getHighScore();
 
-renderer.render(state, { bootstrapping, muted: false });
+renderer.render(state, createRenderFlags(false));
 bootstrapping = false;
 
 window.addEventListener("beforeunload", () => {
@@ -50,15 +56,13 @@ function loop(timestamp: number): void {
         };
     const previousState = state;
     state = step(state, FIXED_TIMESTEP_MS, stepInput);
+    highScore = maybeRecordHighScore(previousState, state);
     playDerivedEvents(previousState, state);
     accumulator -= FIXED_TIMESTEP_MS;
     firstStep = false;
   }
 
-  renderer.render(state, {
-    bootstrapping,
-    muted: sfx.getStatus() === "muted"
-  });
+  renderer.render(state, createRenderFlags(sfx.getStatus() === "muted"));
 
   requestAnimationFrame(loop);
 }
@@ -109,6 +113,25 @@ function playDerivedEvents(previousState: GameState, nextState: GameState): void
   for (const event of events) {
     sfx.play(event);
   }
+}
+
+function maybeRecordHighScore(
+  previousState: GameState,
+  nextState: GameState
+): number {
+  if (previousState.phase === "gameOver" || nextState.phase !== "gameOver") {
+    return highScore;
+  }
+
+  return highScoreStore.recordScore(nextState.hud.score);
+}
+
+function createRenderFlags(muted: boolean): RuntimeRenderFlags {
+  return {
+    bootstrapping,
+    muted,
+    highScore
+  };
 }
 
 function renderFallback(title: string, detail: string): void {
