@@ -22,6 +22,8 @@ type Rect = {
   height: number;
 };
 
+const PLAYER_SHOOT_FRAME_DURATION_MS = 120;
+
 export function step(state: GameState, dtMs: number, input: Input = EMPTY_INPUT): GameState {
   const dt = Math.max(0, dtMs);
 
@@ -89,6 +91,7 @@ function advanceLifeLost(state: GameState, dtMs: number): GameState {
     ...state,
     phase: "gameOver",
     projectiles: [],
+    playerShootFrame: 0,
     transitionTimerMs: 0,
     player: {
       ...state.player,
@@ -109,26 +112,37 @@ function advancePlaying(state: GameState, dtMs: number, input: Input): GameState
   const dtSeconds = dtMs / 1000;
   const nextFrame = state.frame + 1;
   const cooldown = Math.max(0, state.player.shootCooldownMs - dtMs);
+  const playerShootFrame = Math.max(0, state.playerShootFrame - dtMs);
   const movedPlayer = {
-      ...state.player,
-      x: clamp(
-        state.player.x + input.moveX * state.player.speed * dtSeconds,
-        getPlayerMinX(state.arena),
-        getPlayerMaxX(state.arena, state.player)
-      ),
+    ...state.player,
+    x: clamp(
+      state.player.x + input.moveX * state.player.speed * dtSeconds,
+      getPlayerMinX(state.arena),
+      getPlayerMaxX(state.arena, state.player)
+    ),
     shootCooldownMs: cooldown
   };
 
-  const projectileBundle = maybeSpawnProjectile(state, movedPlayer, input.firePressed);
+  const projectileBundle = maybeSpawnProjectile(
+    state,
+    movedPlayer,
+    input.firePressed,
+    playerShootFrame
+  );
   const movedProjectiles = moveProjectiles(projectileBundle.projectiles, dtSeconds, state.arena.height);
   const formationBundle = moveInvaders(state, dtSeconds);
   const collisionBundle = resolveProjectileHits(movedProjectiles, formationBundle.invaders);
   const score = state.hud.score + collisionBundle.scoreDelta;
+  const marchFrame = formationBundle.didAdvance
+    ? toggleMarchFrame(state.marchFrame)
+    : state.marchFrame;
 
   if (hasInvaderBreached(collisionBundle.invaders, movedPlayer)) {
     return {
       ...state,
       phase: "lifeLost",
+      marchFrame,
+      playerShootFrame: 0,
       player: {
         ...movedPlayer,
         shootCooldownMs: 0
@@ -151,6 +165,8 @@ function advancePlaying(state: GameState, dtMs: number, input: Input): GameState
     return {
       ...state,
       phase: "waveClear",
+      marchFrame,
+      playerShootFrame: projectileBundle.playerShootFrame,
       player: {
         ...movedPlayer,
         shootCooldownMs: projectileBundle.playerShootCooldownMs
@@ -170,6 +186,8 @@ function advancePlaying(state: GameState, dtMs: number, input: Input): GameState
 
   return {
     ...state,
+    marchFrame,
+    playerShootFrame: projectileBundle.playerShootFrame,
     player: {
       ...movedPlayer,
       shootCooldownMs: projectileBundle.playerShootCooldownMs
@@ -190,16 +208,19 @@ function advancePlaying(state: GameState, dtMs: number, input: Input): GameState
 function maybeSpawnProjectile(
   state: GameState,
   player: GameState["player"],
-  firePressed: boolean
+  firePressed: boolean,
+  playerShootFrame: number
 ): {
   nextProjectileId: number;
   playerShootCooldownMs: number;
+  playerShootFrame: number;
   projectiles: Projectile[];
 } {
   if (!firePressed || player.shootCooldownMs > 0) {
     return {
       nextProjectileId: state.nextProjectileId,
       playerShootCooldownMs: player.shootCooldownMs,
+      playerShootFrame,
       projectiles: state.projectiles
     };
   }
@@ -213,6 +234,7 @@ function maybeSpawnProjectile(
   return {
     nextProjectileId: state.nextProjectileId + 1,
     playerShootCooldownMs: PLAYER_SHOOT_COOLDOWN_MS,
+    playerShootFrame: PLAYER_SHOOT_FRAME_DURATION_MS,
     projectiles: [...state.projectiles, projectile]
   };
 }
@@ -239,6 +261,7 @@ function moveInvaders(
   state: GameState,
   dtSeconds: number
 ): {
+  didAdvance: boolean;
   formation: GameState["formation"];
   invaders: Invader[];
 } {
@@ -275,6 +298,7 @@ function moveInvaders(
   }
 
   return {
+    didAdvance: dtSeconds > 0 && state.invaders.length > 0,
     formation: {
       ...state.formation,
       direction
@@ -344,4 +368,8 @@ function intersects(a: Rect, b: Rect): boolean {
 
 function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
+}
+
+function toggleMarchFrame(marchFrame: GameState["marchFrame"]): GameState["marchFrame"] {
+  return marchFrame === 0 ? 1 : 0;
 }
