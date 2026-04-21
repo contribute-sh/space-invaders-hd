@@ -74,6 +74,8 @@ export type GameState = {
   formation: Formation;
   hud: HudState;
   frame: number;
+  marchFrame: 0 | 1;
+  playerShootFrame: number;
   nextProjectileId: number;
   transitionTimerMs: number;
 };
@@ -152,6 +154,8 @@ export function createGameState(seed: GameStateSeed = {}): GameState {
       wave
     },
     frame: seed.frame ?? 0,
+    marchFrame: 0,
+    playerShootFrame: 0,
     nextProjectileId,
     transitionTimerMs: seed.transitionTimerMs ?? 0
   };

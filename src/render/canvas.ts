@@ -1,4 +1,12 @@
 import type { GameState, Invader, Projectile } from "../game/state";
+import {
+  INVADER_ROW_DESCRIPTORS,
+  PLAYER_PROJECTILE_DESCRIPTOR,
+  PLAYER_SHIP_DESCRIPTOR,
+  createSpriteSheet,
+  type SpriteDescriptor,
+  type SpriteSheet
+} from "./sprites";
 
 export type RenderFlags = {
   bootstrapping: boolean;
@@ -10,6 +18,17 @@ export type CanvasRenderer = {
 };
 
 const HUD_HEIGHT = 68;
+
+type PreparedSprite = {
+  frameCount: number;
+  height: number;
+  sheet: SpriteSheet;
+  width: number;
+};
+
+const PLAYER_SHIP_SPRITE = prepareSprite(PLAYER_SHIP_DESCRIPTOR);
+const INVADER_ROW_SPRITES = INVADER_ROW_DESCRIPTORS.map(prepareSprite);
+const PLAYER_PROJECTILE_SPRITE = prepareSprite(PLAYER_PROJECTILE_DESCRIPTOR);
 
 export function createCanvasRenderer(canvas: HTMLCanvasElement): CanvasRenderer {
   const context = canvas.getContext("2d");
@@ -52,7 +71,7 @@ function drawScene(
   context.clearRect(0, 0, state.arena.width, state.arena.height);
   drawBackground(context, state);
   drawHud(context, state);
-  drawInvaders(context, state.invaders);
+  drawInvaders(context, state.invaders, state.marchFrame);
   drawProjectiles(context, state.projectiles);
   drawPlayer(context, state);
   drawFloor(context, state);
@@ -177,36 +196,33 @@ function drawHud(context: CanvasRenderingContext2D, state: GameState): void {
   context.fillText(`LIVES ${state.hud.lives}`, state.arena.width - 156, 60);
 }
 
-function drawInvaders(context: CanvasRenderingContext2D, invaders: Invader[]): void {
+function drawInvaders(
+  context: CanvasRenderingContext2D,
+  invaders: Invader[],
+  marchFrame: GameState["marchFrame"]
+): void {
   for (const invader of invaders) {
+    const sprite = INVADER_ROW_SPRITES[invader.row];
+
+    if (sprite === undefined) {
+      continue;
+    }
+
     const hue = 190 + invader.row * 18;
-    const bodyFill = `hsla(${hue}, 88%, 62%, 0.92)`;
     const shadowFill = `hsla(${hue}, 100%, 60%, 0.18)`;
 
     context.fillStyle = shadowFill;
     roundRect(context, invader.x - 4, invader.y - 4, invader.width + 8, invader.height + 10, 12);
     context.fill();
-
-    context.fillStyle = bodyFill;
-    roundRect(context, invader.x, invader.y, invader.width, invader.height, 10);
-    context.fill();
-
-    context.fillStyle = "rgba(10, 18, 34, 0.8)";
-    context.fillRect(invader.x + 10, invader.y + 10, 8, 6);
-    context.fillRect(invader.x + invader.width - 18, invader.y + 10, 8, 6);
-
-    context.fillStyle = "rgba(255, 255, 255, 0.86)";
-    context.fillRect(invader.x + 8, invader.y + invader.height - 6, 10, 4);
-    context.fillRect(invader.x + invader.width - 18, invader.y + invader.height - 6, 10, 4);
-
-    context.strokeStyle = "rgba(255, 255, 255, 0.42)";
-    context.lineWidth = 2;
-    context.beginPath();
-    context.moveTo(invader.x + 12, invader.y + invader.height);
-    context.lineTo(invader.x + 8, invader.y + invader.height + 6);
-    context.moveTo(invader.x + invader.width - 12, invader.y + invader.height);
-    context.lineTo(invader.x + invader.width - 8, invader.y + invader.height + 6);
-    context.stroke();
+    drawSpriteInBounds(
+      context,
+      sprite,
+      marchFrame,
+      invader.x,
+      invader.y,
+      invader.width,
+      invader.height
+    );
   }
 }
 
@@ -215,22 +231,18 @@ function drawProjectiles(
   projectiles: Projectile[]
 ): void {
   for (const projectile of projectiles) {
-    const gradient = context.createLinearGradient(
-      projectile.x,
-      projectile.y,
-      projectile.x,
-      projectile.y + projectile.height
-    );
-    gradient.addColorStop(0, "#e9fcff");
-    gradient.addColorStop(1, "#43d3ff");
-
     context.fillStyle = "rgba(114, 226, 255, 0.25)";
     roundRect(context, projectile.x - 3, projectile.y - 6, projectile.width + 6, projectile.height + 12, 6);
     context.fill();
-
-    context.fillStyle = gradient;
-    roundRect(context, projectile.x, projectile.y, projectile.width, projectile.height, 4);
-    context.fill();
+    drawSpriteInBounds(
+      context,
+      PLAYER_PROJECTILE_SPRITE,
+      0,
+      projectile.x,
+      projectile.y,
+      projectile.width,
+      projectile.height
+    );
   }
 }
 
@@ -244,29 +256,15 @@ function drawPlayer(context: CanvasRenderingContext2D, state: GameState): void {
   context.lineTo(player.x + player.width + 16, player.y + player.height + 10);
   context.closePath();
   context.fill();
-
-  const hull = context.createLinearGradient(player.x, player.y, player.x, player.y + player.height);
-  hull.addColorStop(0, "#f7fbff");
-  hull.addColorStop(0.42, "#96ddff");
-  hull.addColorStop(1, "#38b8ff");
-  context.fillStyle = hull;
-  context.beginPath();
-  context.moveTo(player.x, player.y + player.height);
-  context.lineTo(player.x + player.width / 2, player.y);
-  context.lineTo(player.x + player.width, player.y + player.height);
-  context.closePath();
-  context.fill();
-
-  context.fillStyle = "#05101e";
-  context.beginPath();
-  context.moveTo(player.x + 18, player.y + player.height);
-  context.lineTo(player.x + player.width / 2, player.y + 10);
-  context.lineTo(player.x + player.width - 18, player.y + player.height);
-  context.closePath();
-  context.fill();
-
-  context.fillStyle = "#9df1ff";
-  context.fillRect(player.x + player.width / 2 - 4, player.y + 8, 8, 12);
+  drawSpriteInBounds(
+    context,
+    PLAYER_SHIP_SPRITE,
+    state.playerShootFrame > 0 ? 1 : 0,
+    player.x,
+    player.y,
+    player.width,
+    player.height
+  );
 }
 
 function drawFloor(context: CanvasRenderingContext2D, state: GameState): void {
@@ -372,4 +370,41 @@ function roundRect(
 ): void {
   context.beginPath();
   context.roundRect(x, y, width, height, radius);
+}
+
+function prepareSprite(descriptor: SpriteDescriptor): PreparedSprite {
+  const firstFrame = descriptor.frames[0];
+  const firstRow = firstFrame?.[0];
+
+  if (firstFrame === undefined || firstRow === undefined) {
+    throw new Error(`Sprite "${descriptor.id}" must include a non-empty frame.`);
+  }
+
+  return {
+    frameCount: descriptor.frames.length,
+    height: firstFrame.length * descriptor.pixelSize,
+    sheet: createSpriteSheet(descriptor),
+    width: firstRow.length * descriptor.pixelSize
+  };
+}
+
+function drawSpriteInBounds(
+  context: CanvasRenderingContext2D,
+  sprite: PreparedSprite,
+  frameIndex: number,
+  x: number,
+  y: number,
+  width: number,
+  height: number
+): void {
+  sprite.sheet.drawFrame(
+    context,
+    getFrameIndex(sprite, frameIndex),
+    x + (width - sprite.width) / 2,
+    y + (height - sprite.height) / 2
+  );
+}
+
+function getFrameIndex(sprite: PreparedSprite, frameIndex: number): number {
+  return Math.max(0, Math.min(frameIndex, sprite.frameCount - 1));
 }
