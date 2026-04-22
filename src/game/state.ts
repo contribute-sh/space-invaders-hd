@@ -134,8 +134,13 @@ export const INVADER_HEIGHT = 30;
 export const INVADER_GAP_X = 18;
 export const INVADER_GAP_Y = 18;
 export const INVADER_START_Y = 108;
-export const INVADER_BASE_SPEED = 72;
-export const INVADER_WAVE_SPEED_STEP = 12;
+export const FORMATION_SPEED_BASE = 72;
+export const FORMATION_SPEED_PER_WAVE = 1 / 6;
+export const FORMATION_SPEED_MAX = 288;
+const FORMATION_SPEED_END_MULTIPLIER = 2.7;
+export const INVADER_BASE_SPEED = FORMATION_SPEED_BASE;
+export const INVADER_WAVE_SPEED_STEP =
+  FORMATION_SPEED_BASE * FORMATION_SPEED_PER_WAVE;
 export const INVADER_DESCEND_STEP = 24;
 export const LIFE_LOST_DURATION_MS = 900;
 export const RESPAWN_INVULNERABILITY_MS = 1500;
@@ -216,7 +221,7 @@ export function createPlayer(arena: Arena): Player {
 export function createFormation(arena: Arena, wave: number): Formation {
   return {
     direction: 1,
-    speed: INVADER_BASE_SPEED + Math.max(0, wave - 1) * INVADER_WAVE_SPEED_STEP,
+    speed: getFormationBaseSpeed(wave),
     descendStep: INVADER_DESCEND_STEP,
     leftBound: arena.padding,
     rightBound: arena.width - arena.padding
@@ -329,10 +334,15 @@ export function getPlayerMaxX(arena: Arena, player: Player): number {
 
 export function getFormationSpeed(invaderCount: number, baseSpeed: number): number {
   const totalInvaders = INVADER_ROWS * INVADER_COLS;
-  const eliminated = totalInvaders - invaderCount;
-  const intensity = eliminated / totalInvaders;
+  const clampedInvaderCount = Math.max(0, Math.min(invaderCount, totalInvaders));
+  const eliminatedRatio = (totalInvaders - clampedInvaderCount) / totalInvaders;
+  const startSpeed = Math.min(baseSpeed, FORMATION_SPEED_MAX);
+  const maxSpeed = Math.min(
+    startSpeed * FORMATION_SPEED_END_MULTIPLIER,
+    FORMATION_SPEED_MAX
+  );
 
-  return baseSpeed * (1 + intensity * 1.7);
+  return startSpeed + (maxSpeed - startSpeed) * eliminatedRatio;
 }
 
 export function getProjectileSpawnX(player: Player): number {
@@ -341,4 +351,13 @@ export function getProjectileSpawnX(player: Player): number {
 
 export function getProjectileSpawnY(player: Player): number {
   return player.y - PROJECTILE_HEIGHT;
+}
+
+function getFormationBaseSpeed(wave: number): number {
+  const waveOffset = Math.max(0, wave - 1);
+
+  return Math.min(
+    FORMATION_SPEED_BASE * (1 + waveOffset * FORMATION_SPEED_PER_WAVE),
+    FORMATION_SPEED_MAX
+  );
 }

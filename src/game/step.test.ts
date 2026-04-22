@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   EMPTY_INPUT,
+  FORMATION_SPEED_MAX,
   INVADER_COLS,
   INVADER_HEIGHT,
   INVADER_ROWS,
@@ -464,6 +465,38 @@ describe("step", () => {
     expect(reducedDelta).toBeGreaterThan(fullDelta);
     expect(getFormationSpeed(reduced.invaders.length, reduced.formation.speed)).toBeGreaterThan(
       getFormationSpeed(full.invaders.length, full.formation.speed)
+    );
+  });
+
+  it("increases march speed as invaders are cleared within the same wave", () => {
+    const totalInvaders = INVADER_ROWS * INVADER_COLS;
+    const state = createPlayingState({ wave: 1 });
+    const fullRosterSpeed = getFormationSpeed(totalInvaders, state.formation.speed);
+    const halfRosterSpeed = getFormationSpeed(
+      Math.ceil(totalInvaders / 2),
+      state.formation.speed
+    );
+    const oneInvaderSpeed = getFormationSpeed(1, state.formation.speed);
+
+    expect(fullRosterSpeed).toBeLessThan(halfRosterSpeed);
+    expect(halfRosterSpeed).toBeLessThan(oneInvaderSpeed);
+  });
+
+  it("starts higher waves with a faster formation speed at the same kill count", () => {
+    const totalInvaders = INVADER_ROWS * INVADER_COLS;
+    const lowWave = createPlayingState({ wave: 1 });
+    const highWave = createPlayingState({ wave: 4 });
+
+    expect(
+      getFormationSpeed(totalInvaders, lowWave.formation.speed)
+    ).toBeLessThan(getFormationSpeed(totalInvaders, highWave.formation.speed));
+  });
+
+  it("caps formation speed even on extreme waves with one invader left", () => {
+    const waveNinetyNine = createPlayingState({ wave: 99 });
+
+    expect(getFormationSpeed(1, waveNinetyNine.formation.speed)).toBeLessThanOrEqual(
+      FORMATION_SPEED_MAX
     );
   });
 
