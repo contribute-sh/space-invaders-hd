@@ -134,8 +134,12 @@ export const INVADER_HEIGHT = 30;
 export const INVADER_GAP_X = 18;
 export const INVADER_GAP_Y = 18;
 export const INVADER_START_Y = 108;
-export const INVADER_BASE_SPEED = 72;
-export const INVADER_WAVE_SPEED_STEP = 12;
+export const FORMATION_SPEED_BASE = 72;
+export const FORMATION_SPEED_PER_WAVE = 1 / 6;
+export const FORMATION_SPEED_MAX = 288;
+export const INVADER_BASE_SPEED = FORMATION_SPEED_BASE;
+export const INVADER_WAVE_SPEED_STEP =
+  FORMATION_SPEED_BASE * FORMATION_SPEED_PER_WAVE;
 export const INVADER_DESCEND_STEP = 24;
 export const LIFE_LOST_DURATION_MS = 900;
 export const RESPAWN_INVULNERABILITY_MS = 1500;
@@ -150,6 +154,7 @@ export const EMPTY_INPUT: Input = {
 };
 
 const ROW_POINTS = [50, 40, 30, 20, 10] as const;
+const FORMATION_SPEED_KILL_MULTIPLIER = 2.7;
 
 export function createInitialGameState(): GameState {
   return createGameState({ phase: "start" });
@@ -216,7 +221,7 @@ export function createPlayer(arena: Arena): Player {
 export function createFormation(arena: Arena, wave: number): Formation {
   return {
     direction: 1,
-    speed: INVADER_BASE_SPEED + Math.max(0, wave - 1) * INVADER_WAVE_SPEED_STEP,
+    speed: getFormationStartSpeed(wave),
     descendStep: INVADER_DESCEND_STEP,
     leftBound: arena.padding,
     rightBound: arena.width - arena.padding
@@ -327,12 +332,37 @@ export function getPlayerMaxX(arena: Arena, player: Player): number {
   return arena.width - arena.padding - player.width;
 }
 
-export function getFormationSpeed(invaderCount: number, baseSpeed: number): number {
-  const totalInvaders = INVADER_ROWS * INVADER_COLS;
-  const eliminated = totalInvaders - invaderCount;
-  const intensity = eliminated / totalInvaders;
+function getFormationStartSpeed(wave: number): number {
+  return Math.min(
+    FORMATION_SPEED_MAX,
+    FORMATION_SPEED_BASE *
+      (1 + Math.max(0, wave - 1) * FORMATION_SPEED_PER_WAVE)
+  );
+}
 
-  return baseSpeed * (1 + intensity * 1.7);
+export function getFormationSpeed(
+  invaderCount: number,
+  waveStartSpeed: number,
+  totalInvaders = INVADER_ROWS * INVADER_COLS
+): number {
+  const clampedTotalInvaders = Math.max(1, totalInvaders);
+  const clampedInvaderCount = Math.max(
+    0,
+    Math.min(invaderCount, clampedTotalInvaders)
+  );
+  const killedRatio =
+    (clampedTotalInvaders - clampedInvaderCount) / clampedTotalInvaders;
+  const cappedWaveStartSpeed = Math.min(waveStartSpeed, FORMATION_SPEED_MAX);
+  const waveMaxSpeed = Math.min(
+    FORMATION_SPEED_MAX,
+    cappedWaveStartSpeed * FORMATION_SPEED_KILL_MULTIPLIER
+  );
+
+  // Interpolate between the wave's opening pace and its cap as the formation thins out.
+  return (
+    cappedWaveStartSpeed +
+    (waveMaxSpeed - cappedWaveStartSpeed) * killedRatio
+  );
 }
 
 export function getProjectileSpawnX(player: Player): number {
