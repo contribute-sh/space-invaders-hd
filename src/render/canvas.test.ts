@@ -140,7 +140,11 @@ describe("createCanvasRenderer", () => {
       projectiles: []
     };
 
-    renderer.render(state, { bootstrapping: false, muted: false });
+    renderer.render(state, {
+      bootstrapping: false,
+      highScore: 360,
+      muted: false
+    });
 
     expect(
       context.fillTextCalls.some(
@@ -169,5 +173,35 @@ describe("createCanvasRenderer", () => {
     );
 
     expect(countClusters(uniqueHudXValues)).toBe(state.hud.lives);
+  });
+
+  it("renders the persisted high score inside the HUD band", () => {
+    vi.stubGlobal("window", { devicePixelRatio: 1 });
+
+    const context = new FakeCanvasContext();
+    const canvas = createFakeCanvas(context);
+    const renderer = createCanvasRenderer(canvas);
+    const highScore = 424242;
+    const state = {
+      ...createPlayingState(),
+      invaders: [],
+      projectiles: []
+    };
+
+    renderer.render(state, {
+      bootstrapping: false,
+      highScore,
+      muted: false
+    });
+
+    expect(
+      context.fillTextCalls.some(
+        (call) =>
+          call.text.startsWith("HIGH ") &&
+          call.text.includes(String(highScore)) &&
+          call.y >= HUD_TOP &&
+          call.y < HUD_TOP + HUD_HEIGHT
+      )
+    ).toBe(true);
   });
 });
