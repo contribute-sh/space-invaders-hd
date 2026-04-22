@@ -1,4 +1,5 @@
-import { createSfxController, type SfxName } from "./audio/sfx";
+import { deriveSfxEvents } from "./audio/events";
+import { createSfxController } from "./audio/sfx";
 import { createInitialGameState, type GameState, type Input } from "./game/state";
 import { step } from "./game/step";
 import { createKeyboardController } from "./input/keyboard";
@@ -78,31 +79,7 @@ function maybeArmAudio(phase: GameState["phase"], input: Input): void {
 }
 
 function playDerivedEvents(previousState: GameState, nextState: GameState): void {
-  const events: SfxName[] = [];
-
-  if (nextState.projectiles.length > previousState.projectiles.length) {
-    events.push("shoot");
-  }
-
-  if (nextState.invaders.length < previousState.invaders.length) {
-    events.push("hit");
-  }
-
-  if (
-    previousState.phase !== "lifeLost" &&
-    nextState.phase === "lifeLost"
-  ) {
-    events.push("playerDeath");
-  }
-
-  if (
-    previousState.phase !== "waveClear" &&
-    nextState.phase === "waveClear"
-  ) {
-    events.push("waveClear");
-  }
-
-  for (const event of events) {
+  for (const event of deriveSfxEvents(previousState, nextState)) {
     sfx.play(event);
   }
 }
