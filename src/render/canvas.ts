@@ -18,6 +18,8 @@ export type CanvasRenderer = {
 };
 
 const HUD_HEIGHT = 68;
+const HUD_MONOSPACE_FONT =
+  '600 18px ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace';
 
 type PreparedSprite = {
   frameCount: number;
@@ -27,6 +29,11 @@ type PreparedSprite = {
 };
 
 const PLAYER_SHIP_SPRITE = prepareSprite(PLAYER_SHIP_DESCRIPTOR);
+const HUD_PLAYER_SHIP_SPRITE = prepareSprite({
+  ...PLAYER_SHIP_DESCRIPTOR,
+  id: "hud-player-ship",
+  pixelSize: 2
+});
 const INVADER_ROW_SPRITES = INVADER_ROW_DESCRIPTORS.map(prepareSprite);
 const PLAYER_PROJECTILE_SPRITE = prepareSprite(PLAYER_PROJECTILE_DESCRIPTOR);
 
@@ -181,19 +188,31 @@ function drawBackground(
 }
 
 function drawHud(context: CanvasRenderingContext2D, state: GameState): void {
+  const hudX = 22;
+  const hudY = 18;
+  const hudWidth = state.arena.width - 44;
+  const hudRight = hudX + hudWidth;
+
   context.fillStyle = "rgba(8, 14, 30, 0.78)";
-  context.fillRect(22, 18, state.arena.width - 44, HUD_HEIGHT);
+  context.fillRect(hudX, hudY, hudWidth, HUD_HEIGHT);
 
   context.strokeStyle = "rgba(140, 207, 255, 0.26)";
   context.lineWidth = 1.5;
-  roundRect(context, 22, 18, state.arena.width - 44, HUD_HEIGHT, 20);
+  roundRect(context, hudX, hudY, hudWidth, HUD_HEIGHT, 20);
   context.stroke();
 
-  context.font = '600 18px "Arial Narrow", "Avenir Next Condensed", sans-serif';
+  context.font = HUD_MONOSPACE_FONT;
   context.fillStyle = "#d3f4ff";
-  context.fillText(`SCORE ${padScore(state.hud.score)}`, 44, 60);
-  context.fillText(`WAVE ${state.hud.wave}`, state.arena.width / 2 - 44, 60);
-  context.fillText(`LIVES ${state.hud.lives}`, state.arena.width - 156, 60);
+  context.fillText(`SCORE ${padHudScore(state.hud.score)}`, hudX + 22, hudY + 42);
+
+  context.textAlign = "center";
+  context.fillText(`WAVE ${state.hud.wave}`, state.arena.width / 2, hudY + 42);
+
+  context.textAlign = "right";
+  context.fillText("LIVES", hudRight - 22, hudY + 26);
+  context.textAlign = "start";
+
+  drawHudLives(context, state, hudRight);
 }
 
 function drawInvaders(
@@ -358,6 +377,33 @@ function drawOverlay(
 
 function padScore(score: number): string {
   return score.toString().padStart(4, "0");
+}
+
+function padHudScore(score: number): string {
+  return score.toString().padStart(6, "0");
+}
+
+function drawHudLives(
+  context: CanvasRenderingContext2D,
+  state: GameState,
+  hudRight: number
+): void {
+  const lifeCount = Math.max(0, state.hud.lives);
+
+  if (lifeCount === 0) {
+    return;
+  }
+
+  const gap = 10;
+  const totalWidth =
+    lifeCount * HUD_PLAYER_SHIP_SPRITE.width + (lifeCount - 1) * gap;
+  let x = hudRight - 22 - totalWidth;
+  const y = 56;
+
+  for (let index = 0; index < lifeCount; index += 1) {
+    HUD_PLAYER_SHIP_SPRITE.sheet.drawFrame(context, 0, x, y);
+    x += HUD_PLAYER_SHIP_SPRITE.width + gap;
+  }
 }
 
 function roundRect(
