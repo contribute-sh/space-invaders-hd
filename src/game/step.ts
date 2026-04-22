@@ -2,6 +2,7 @@ import {
   EMPTY_INPUT,
   LIFE_LOST_DURATION_MS,
   PLAYER_SHOOT_COOLDOWN_MS,
+  RESPAWN_INVULNERABILITY_MS,
   createGameState,
   createPlayerProjectile,
   getFormationSpeed,
@@ -38,7 +39,8 @@ export function step(state: GameState, dtMs: number, input: Input = EMPTY_INPUT)
             phase: "playing",
             wave: state.hud.wave + 1,
             score: state.hud.score,
-            lives: state.hud.lives
+            lives: state.hud.lives,
+            elapsedMs: state.elapsedMs
           })
         : advanceFrame(state);
     case "gameOver":
@@ -72,19 +74,32 @@ function advanceLifeLost(state: GameState, dtMs: number): GameState {
   if (remaining > 0) {
     return {
       ...state,
-      transitionTimerMs: remaining
+      transitionTimerMs: remaining,
+      elapsedMs: state.elapsedMs + dtMs
     };
   }
 
+  const resolvedElapsedMs = state.elapsedMs + state.transitionTimerMs;
+
   if (state.hud.lives > 0) {
-    return createGameState({
+    const respawnedState = createGameState({
       phase: "playing",
       wave: state.hud.wave,
       score: state.hud.score,
       lives: state.hud.lives,
       frame: state.frame + 1,
-      nextProjectileId: state.nextProjectileId
+      nextProjectileId: state.nextProjectileId,
+      elapsedMs: resolvedElapsedMs
     });
+
+    return {
+      ...respawnedState,
+      player: {
+        ...respawnedState.player,
+        invulnerableUntilMs:
+          resolvedElapsedMs + RESPAWN_INVULNERABILITY_MS
+      }
+    };
   }
 
   return {
@@ -97,7 +112,8 @@ function advanceLifeLost(state: GameState, dtMs: number): GameState {
       ...state.player,
       shootCooldownMs: 0
     },
-    frame: state.frame + 1
+    frame: state.frame + 1,
+    elapsedMs: resolvedElapsedMs
   };
 }
 
@@ -111,6 +127,7 @@ function advancePlaying(state: GameState, dtMs: number, input: Input): GameState
 
   const dtSeconds = dtMs / 1000;
   const nextFrame = state.frame + 1;
+  const nextElapsedMs = state.elapsedMs + dtMs;
   const cooldown = Math.max(0, state.player.shootCooldownMs - dtMs);
   const playerShootFrame = Math.max(0, state.playerShootFrame - dtMs);
   const movedPlayer = {
@@ -136,8 +153,10 @@ function advancePlaying(state: GameState, dtMs: number, input: Input): GameState
   const marchFrame = formationBundle.didAdvance
     ? toggleMarchFrame(state.marchFrame)
     : state.marchFrame;
+  const playerIsInvulnerable =
+    movedPlayer.invulnerableUntilMs > nextElapsedMs;
 
-  if (hasInvaderBreached(collisionBundle.invaders, movedPlayer)) {
+  if (!playerIsInvulnerable && hasInvaderBreached(collisionBundle.invaders, movedPlayer)) {
     return {
       ...state,
       phase: "lifeLost",
@@ -157,7 +176,8 @@ function advancePlaying(state: GameState, dtMs: number, input: Input): GameState
       },
       transitionTimerMs: LIFE_LOST_DURATION_MS,
       frame: nextFrame,
-      nextProjectileId: projectileBundle.nextProjectileId
+      nextProjectileId: projectileBundle.nextProjectileId,
+      elapsedMs: nextElapsedMs
     };
   }
 
@@ -180,7 +200,8 @@ function advancePlaying(state: GameState, dtMs: number, input: Input): GameState
       },
       transitionTimerMs: 0,
       frame: nextFrame,
-      nextProjectileId: projectileBundle.nextProjectileId
+      nextProjectileId: projectileBundle.nextProjectileId,
+      elapsedMs: nextElapsedMs
     };
   }
 
@@ -201,7 +222,8 @@ function advancePlaying(state: GameState, dtMs: number, input: Input): GameState
     },
     frame: nextFrame,
     transitionTimerMs: 0,
-    nextProjectileId: projectileBundle.nextProjectileId
+    nextProjectileId: projectileBundle.nextProjectileId,
+    elapsedMs: nextElapsedMs
   };
 }
 
