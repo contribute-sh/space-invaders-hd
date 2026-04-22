@@ -380,6 +380,40 @@ describe("createSfxController", () => {
     expect(harness.gains).toHaveLength(0);
   });
 
+  it("reports muted while the user mute preference is enabled, even after arming", async () => {
+    const controller = createSfxController();
+
+    controller.setMuted(true);
+    await controller.arm();
+
+    expect(harness.audioContextConstructor).toHaveBeenCalledTimes(1);
+    expect(controller.getStatus()).toBe("muted");
+  });
+
+  it("does not create any nodes while the user mute preference is enabled", async () => {
+    const controller = createSfxController();
+    await controller.arm();
+
+    controller.setMuted(true);
+    controller.play("shoot");
+
+    expect(harness.oscillators).toHaveLength(0);
+    expect(harness.gains).toHaveLength(0);
+  });
+
+  it("restores playback after the user mute preference is cleared", async () => {
+    const controller = createSfxController();
+
+    controller.setMuted(true);
+    await controller.arm();
+    controller.setMuted(false);
+
+    const playback = capturePlayback(harness, controller, "shoot");
+
+    expect(controller.getStatus()).toBe("ready");
+    expectScheduledShortBeeps(playback, harness.destination);
+  });
+
   it("does not create any nodes while idle", () => {
     const controller = createSfxController();
 

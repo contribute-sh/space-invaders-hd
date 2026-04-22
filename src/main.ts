@@ -1,4 +1,5 @@
 import { deriveSfxEvents } from "./audio/events";
+import { createMuteStore } from "./audio/mute";
 import { createSfxController } from "./audio/sfx";
 import { createInitialGameState, type GameState, type Input } from "./game/state";
 import { step } from "./game/step";
@@ -19,6 +20,7 @@ if (canvas === null) {
 const renderer = createRenderer(canvas);
 const keyboard = createKeyboardController(window);
 const sfx = createSfxController();
+const muteStore = createMuteStore();
 const highScoreStore = createHighScoreStore();
 
 let state = createInitialGameState();
@@ -26,7 +28,8 @@ let bootstrapping = true;
 let audioAttempted = false;
 let frameInput: Input = keyboard.snapshot();
 
-renderer.render(state, createRenderFlags(false));
+sfx.setMuted(muteStore.isMuted());
+renderer.render(state, createRenderFlags(muteStore.isMuted()));
 bootstrapping = false;
 maybeArmAudio(state.phase, frameInput);
 
@@ -48,8 +51,14 @@ const loop = createFixedStepLoop({
   },
   onRender: () => {
     frameInput = keyboard.snapshot();
+
+    if (frameInput.mutePressed) {
+      muteStore.toggle();
+      sfx.setMuted(muteStore.isMuted());
+    }
+
     maybeArmAudio(state.phase, frameInput);
-    renderer.render(state, createRenderFlags(sfx.getStatus() === "muted"));
+    renderer.render(state, createRenderFlags(muteStore.isMuted()));
   }
 });
 

@@ -4,6 +4,7 @@ export type SfxController = {
   arm: () => Promise<void>;
   getStatus: () => "idle" | "ready" | "muted";
   play: (name: SfxName) => void;
+  setMuted: (muted: boolean) => void;
 };
 
 type Tone = {
@@ -16,6 +17,7 @@ type Tone = {
 export function createSfxController(): SfxController {
   let context: AudioContext | null = null;
   let status: "idle" | "ready" | "muted" = "idle";
+  let muted = false;
 
   return {
     arm: async () => {
@@ -33,9 +35,9 @@ export function createSfxController(): SfxController {
         status = "muted";
       }
     },
-    getStatus: () => status,
+    getStatus: () => (muted ? "muted" : status),
     play: (name) => {
-      if (status !== "ready" || context === null) {
+      if (muted || status !== "ready" || context === null) {
         return;
       }
 
@@ -47,6 +49,9 @@ export function createSfxController(): SfxController {
         playTone(context, now + offset, tone);
         offset += tone.duration * 0.68;
       }
+    },
+    setMuted: (value) => {
+      muted = value;
     }
   };
 }
