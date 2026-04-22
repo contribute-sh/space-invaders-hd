@@ -7,9 +7,7 @@ import { createHighScoreStore } from "./persistence";
 import { createCanvasRenderer, type CanvasRenderer } from "./render/canvas";
 
 const FIXED_TIMESTEP_MS = 1000 / 60;
-type RuntimeRenderFlags = Parameters<CanvasRenderer["render"]>[1] & {
-  highScore: number;
-};
+type RuntimeRenderFlags = Parameters<CanvasRenderer["render"]>[1];
 
 const canvas = document.querySelector<HTMLCanvasElement>("#game");
 
@@ -25,7 +23,6 @@ const highScoreStore = createHighScoreStore();
 let state = createInitialGameState();
 let bootstrapping = true;
 let audioAttempted = false;
-let highScore = highScoreStore.getHighScore();
 let frameInput: Input = keyboard.snapshot();
 
 renderer.render(state, createRenderFlags(false));
@@ -45,7 +42,7 @@ const loop = createFixedStepLoop({
         };
     const previousState = state;
     state = step(state, dtMs, stepInput);
-    highScore = maybeRecordHighScore(previousState, state);
+    maybeRecordHighScore(previousState, state);
     playDerivedEvents(previousState, state);
   },
   onRender: () => {
@@ -113,19 +110,19 @@ function playDerivedEvents(previousState: GameState, nextState: GameState): void
 function maybeRecordHighScore(
   previousState: GameState,
   nextState: GameState
-): number {
+): void {
   if (previousState.phase === "gameOver" || nextState.phase !== "gameOver") {
-    return highScore;
+    return;
   }
 
-  return highScoreStore.recordScore(nextState.hud.score);
+  highScoreStore.recordScore(nextState.hud.score);
 }
 
 function createRenderFlags(muted: boolean): RuntimeRenderFlags {
   return {
     bootstrapping,
     muted,
-    highScore
+    highScore: highScoreStore.getHighScore()
   };
 }
 

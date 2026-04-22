@@ -10,6 +10,7 @@ import {
 
 export type RenderFlags = {
   bootstrapping: boolean;
+  highScore: number;
   muted: boolean;
 };
 
@@ -77,7 +78,7 @@ function drawScene(
 ): void {
   context.clearRect(0, 0, state.arena.width, state.arena.height);
   drawBackground(context, state);
-  drawHud(context, state);
+  drawHud(context, state, flags);
   drawInvaders(context, state.invaders, state.marchFrame);
   drawProjectiles(context, state.projectiles);
   drawPlayer(context, state);
@@ -187,7 +188,11 @@ function drawBackground(
   }
 }
 
-function drawHud(context: CanvasRenderingContext2D, state: GameState): void {
+function drawHud(
+  context: CanvasRenderingContext2D,
+  state: GameState,
+  flags: RenderFlags
+): void {
   const hudX = 22;
   const hudY = 18;
   const hudWidth = state.arena.width - 44;
@@ -206,6 +211,7 @@ function drawHud(context: CanvasRenderingContext2D, state: GameState): void {
   context.fillText(`SCORE ${padHudScore(state.hud.score)}`, hudX + 22, hudY + 42);
 
   context.textAlign = "center";
+  context.fillText(`HIGH ${padHudScore(flags.highScore)}`, state.arena.width / 2, hudY + 26);
   context.fillText(`WAVE ${state.hud.wave}`, state.arena.width / 2, hudY + 42);
 
   context.textAlign = "right";
