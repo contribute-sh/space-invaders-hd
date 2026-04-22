@@ -10,6 +10,8 @@ export type Input = {
   moveX: -1 | 0 | 1;
   firePressed: boolean;
   pausePressed: boolean;
+  fireHeld?: boolean;
+  pauseHeld?: boolean;
   mutePressed?: boolean;
 };
 
@@ -122,6 +124,8 @@ export const EMPTY_INPUT: Input = {
   moveX: 0,
   firePressed: false,
   pausePressed: false,
+  fireHeld: false,
+  pauseHeld: false,
   mutePressed: false
 };
 

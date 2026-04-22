@@ -94,6 +94,8 @@ export function createKeyboardController(target: Window = window): KeyboardContr
         moveX,
         firePressed: held.fireEdge,
         pausePressed: held.pauseEdge,
+        fireHeld: held.fire,
+        pauseHeld: held.pause,
         mutePressed: held.muteEdge
       };
 
