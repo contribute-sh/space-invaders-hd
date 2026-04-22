@@ -80,13 +80,23 @@ export function createKeyboardController(target: Window = window): KeyboardContr
     }
   };
 
+  const onBlur = (): void => {
+    held.left = false;
+    held.right = false;
+    held.fire = false;
+    held.pause = false;
+    held.mute = false;
+  };
+
   target.addEventListener("keydown", onKeyDown);
   target.addEventListener("keyup", onKeyUp);
+  target.addEventListener("blur", onBlur);
 
   return {
     dispose: () => {
       target.removeEventListener("keydown", onKeyDown);
       target.removeEventListener("keyup", onKeyUp);
+      target.removeEventListener("blur", onBlur);
     },
     snapshot: () => {
       const moveX = held.left === held.right ? 0 : held.left ? -1 : 1;
