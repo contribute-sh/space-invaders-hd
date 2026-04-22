@@ -2,6 +2,7 @@ import { createSfxController, type SfxName } from "./audio/sfx";
 import { createInitialGameState, type GameState, type Input } from "./game/state";
 import { step } from "./game/step";
 import { createKeyboardController } from "./input/keyboard";
+import { createFixedStepLoop } from "./loop/fixedStep";
 import { createHighScoreStore } from "./persistence";
 import { createCanvasRenderer, type CanvasRenderer } from "./render/canvas";
 
@@ -22,32 +23,19 @@ const sfx = createSfxController();
 const highScoreStore = createHighScoreStore();
 
 let state = createInitialGameState();
-let previousTimestamp = performance.now();
-let accumulator = 0;
 let bootstrapping = true;
 let audioAttempted = false;
 let highScore = highScoreStore.getHighScore();
+let frameInput: Input = keyboard.snapshot();
 
 renderer.render(state, createRenderFlags(false));
 bootstrapping = false;
+maybeArmAudio(state.phase, frameInput);
 
-window.addEventListener("beforeunload", () => {
-  keyboard.dispose();
-});
-
-requestAnimationFrame(loop);
-
-function loop(timestamp: number): void {
-  const delta = Math.min(100, timestamp - previousTimestamp);
-  previousTimestamp = timestamp;
-  accumulator += delta;
-
-  const frameInput = keyboard.snapshot();
-  maybeArmAudio(state.phase, frameInput);
-
-  let firstStep = true;
-  while (accumulator >= FIXED_TIMESTEP_MS) {
-    const stepInput = firstStep
+const loop = createFixedStepLoop({
+  stepMs: FIXED_TIMESTEP_MS,
+  onStep: ({ dtMs, firstStepOfFrame }) => {
+    const stepInput = firstStepOfFrame
       ? frameInput
       : {
           ...frameInput,
@@ -55,17 +43,23 @@ function loop(timestamp: number): void {
           pausePressed: false
         };
     const previousState = state;
-    state = step(state, FIXED_TIMESTEP_MS, stepInput);
+    state = step(state, dtMs, stepInput);
     highScore = maybeRecordHighScore(previousState, state);
     playDerivedEvents(previousState, state);
-    accumulator -= FIXED_TIMESTEP_MS;
-    firstStep = false;
+  },
+  onRender: () => {
+    frameInput = keyboard.snapshot();
+    maybeArmAudio(state.phase, frameInput);
+    renderer.render(state, createRenderFlags(sfx.getStatus() === "muted"));
   }
+});
 
-  renderer.render(state, createRenderFlags(sfx.getStatus() === "muted"));
+window.addEventListener("beforeunload", () => {
+  loop.stop();
+  keyboard.dispose();
+});
 
-  requestAnimationFrame(loop);
-}
+loop.start();
 
 function maybeArmAudio(phase: GameState["phase"], input: Input): void {
   if (audioAttempted) {
