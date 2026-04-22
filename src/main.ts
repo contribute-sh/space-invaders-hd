@@ -40,7 +40,8 @@ const loop = createFixedStepLoop({
       : {
           ...frameInput,
           firePressed: false,
-          pausePressed: false
+          pausePressed: false,
+          mutePressed: false
         };
     const previousState = state;
     state = step(state, dtMs, stepInput);
