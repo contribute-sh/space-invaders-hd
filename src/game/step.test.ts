@@ -8,6 +8,7 @@ import {
   LIFE_LOST_DURATION_MS,
   PLAYER_SHOOT_COOLDOWN_MS,
   PROJECTILE_HEIGHT,
+  RESPAWN_INVULNERABILITY_MS,
   STARTING_LIVES,
   createGameState,
   createPlayingState,
@@ -16,6 +17,21 @@ import {
   getPlayerMinX
 } from "./state";
 import { step } from "./step";
+
+function createRespawnedPlayingState() {
+  const lifeLost = {
+    ...createPlayingState({
+      elapsedMs: 2_000,
+      lives: 2,
+      score: 440,
+      wave: 2
+    }),
+    phase: "lifeLost" as const,
+    transitionTimerMs: 50
+  };
+
+  return step(lifeLost, 60, EMPTY_INPUT);
+}
 
 describe("step", () => {
   it("keeps the start screen active without confirm input", () => {
@@ -392,6 +408,85 @@ describe("step", () => {
     expect(next.hud.lives).toBe(2);
     expect(next.invaders).toHaveLength(INVADER_ROWS * INVADER_COLS);
     expect(next.projectiles).toHaveLength(0);
+  });
+
+  it("sets respawn invulnerability ahead of the current simulation time", () => {
+    const next = createRespawnedPlayingState();
+
+    expect(next.phase).toBe("playing");
+    expect(next.elapsedMs).toBe(2_050);
+    expect(next.player.invulnerableUntilMs).toBe(
+      next.elapsedMs + RESPAWN_INVULNERABILITY_MS
+    );
+  });
+
+  it("does not lose another life on invader contact during respawn invulnerability", () => {
+    const respawned = createRespawnedPlayingState();
+    const invader = respawned.invaders[0];
+    expect(invader).toBeDefined();
+    const state = {
+      ...respawned,
+      invaders:
+        invader === undefined
+          ? []
+          : [
+              {
+                ...invader,
+                x: respawned.player.x,
+                y: respawned.player.y
+              }
+            ]
+    };
+
+    const next = step(state, 0, EMPTY_INPUT);
+
+    expect(next.phase).toBe("playing");
+    expect(next.hud.lives).toBe(respawned.hud.lives);
+    expect(next.invaders).toHaveLength(1);
+  });
+
+  it("allows a later collision once respawn invulnerability expires", () => {
+    const respawned = createRespawnedPlayingState();
+    const invader = respawned.invaders[0];
+    expect(invader).toBeDefined();
+    const safeState = {
+      ...respawned,
+      invaders:
+        invader === undefined
+          ? []
+          : [
+              {
+                ...invader,
+                x: respawned.arena.padding,
+                y: 0
+              }
+            ]
+    };
+
+    const expired = step(
+      safeState,
+      RESPAWN_INVULNERABILITY_MS,
+      EMPTY_INPUT
+    );
+    const collidingState = {
+      ...expired,
+      invaders: expired.invaders.map((currentInvader) => ({
+        ...currentInvader,
+        x: expired.player.x,
+        y: expired.player.y
+      }))
+    };
+    const next = step(collidingState, 0, EMPTY_INPUT);
+
+    expect(expired.player.invulnerableUntilMs).toBe(expired.elapsedMs);
+    expect(next.phase).toBe("lifeLost");
+    expect(next.hud.lives).toBe(expired.hud.lives - 1);
+  });
+
+  it("exposes invulnerableUntilMs on state.player for rendering", () => {
+    const state = createPlayingState();
+
+    expect(state.player.invulnerableUntilMs).toBe(0);
   });
 
   it("transitions to game over after the final life is lost", () => {

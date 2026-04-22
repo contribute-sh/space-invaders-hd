@@ -27,6 +27,7 @@ export type Player = {
   height: number;
   speed: number;
   shootCooldownMs: number;
+  invulnerableUntilMs: number;
 };
 
 export type Invader = {
@@ -78,6 +79,7 @@ export type GameState = {
   playerShootFrame: number;
   nextProjectileId: number;
   transitionTimerMs: number;
+  elapsedMs: number;
 };
 
 export type GameStateSeed = {
@@ -88,6 +90,7 @@ export type GameStateSeed = {
   frame?: number;
   nextProjectileId?: number;
   transitionTimerMs?: number;
+  elapsedMs?: number;
 };
 
 export const ARENA_WIDTH = 960;
@@ -113,6 +116,7 @@ export const INVADER_BASE_SPEED = 72;
 export const INVADER_WAVE_SPEED_STEP = 12;
 export const INVADER_DESCEND_STEP = 24;
 export const LIFE_LOST_DURATION_MS = 900;
+export const RESPAWN_INVULNERABILITY_MS = 1500;
 
 export const EMPTY_INPUT: Input = {
   moveX: 0,
@@ -157,7 +161,8 @@ export function createGameState(seed: GameStateSeed = {}): GameState {
     marchFrame: 0,
     playerShootFrame: 0,
     nextProjectileId,
-    transitionTimerMs: seed.transitionTimerMs ?? 0
+    transitionTimerMs: seed.transitionTimerMs ?? 0,
+    elapsedMs: seed.elapsedMs ?? 0
   };
 }
 
@@ -177,7 +182,8 @@ export function createPlayer(arena: Arena): Player {
     width: PLAYER_WIDTH,
     height: PLAYER_HEIGHT,
     speed: PLAYER_SPEED,
-    shootCooldownMs: 0
+    shootCooldownMs: 0,
+    invulnerableUntilMs: 0
   };
 }
 
