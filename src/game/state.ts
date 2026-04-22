@@ -54,6 +54,20 @@ export type Projectile = {
   active: boolean;
 };
 
+export type ShieldCell = {
+  id: number;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  alive: boolean;
+};
+
+export type Shield = {
+  id: number;
+  cells: ShieldCell[];
+};
+
 export type Formation = {
   direction: -1 | 1;
   speed: number;
@@ -74,6 +88,7 @@ export type GameState = {
   player: Player;
   invaders: Invader[];
   projectiles: Projectile[];
+  shields: Shield[];
   formation: Formation;
   hud: HudState;
   frame: number;
@@ -107,6 +122,11 @@ export const STARTING_LIVES = 3;
 export const PROJECTILE_WIDTH = 6;
 export const PROJECTILE_HEIGHT = 18;
 export const PROJECTILE_SPEED = -720;
+export const SHIELD_COUNT = 4;
+export const SHIELD_CELL_ROWS = 4;
+export const SHIELD_CELL_COLS = 6;
+export const SHIELD_CELL_WIDTH = 16;
+export const SHIELD_CELL_HEIGHT = 12;
 export const INVADER_ROWS = 5;
 export const INVADER_COLS = 11;
 export const INVADER_WIDTH = 48;
@@ -147,6 +167,7 @@ export function createGameState(seed: GameStateSeed = {}): GameState {
   const score = seed.score ?? 0;
   const lives = seed.lives ?? STARTING_LIVES;
   const invaders = createInvaders(arena, wave);
+  const shields = createShields(arena);
   const nextProjectileId = seed.nextProjectileId ?? 1;
 
   return {
@@ -155,6 +176,7 @@ export function createGameState(seed: GameStateSeed = {}): GameState {
     player: createPlayer(arena),
     invaders,
     projectiles: [],
+    shields,
     formation: createFormation(arena, wave),
     hud: {
       score,
@@ -226,6 +248,58 @@ export function createInvaders(arena: Arena, wave: number): Invader[] {
   }
 
   return invaders;
+}
+
+export function createShields(arena: Arena): Shield[] {
+  const shieldWidth = SHIELD_CELL_COLS * SHIELD_CELL_WIDTH;
+  const shieldHeight = SHIELD_CELL_ROWS * SHIELD_CELL_HEIGHT;
+  const availableWidth = arena.width - arena.padding * 2;
+  const gapX = Math.max(
+    0,
+    (availableWidth - SHIELD_COUNT * shieldWidth) / (SHIELD_COUNT + 1)
+  );
+  const invaderBottom =
+    INVADER_START_Y +
+    INVADER_ROWS * INVADER_HEIGHT +
+    (INVADER_ROWS - 1) * INVADER_GAP_Y;
+  const playerTop = arena.floorY - PLAYER_HEIGHT;
+  const desiredY =
+    invaderBottom + (playerTop - invaderBottom - shieldHeight) / 2;
+  const startY = Math.min(
+    playerTop - shieldHeight,
+    Math.max(invaderBottom, desiredY)
+  );
+
+  let cellId = 1;
+
+  return Array.from({ length: SHIELD_COUNT }, (_, shieldIndex) => {
+    const startX =
+      arena.padding + gapX * (shieldIndex + 1) + shieldWidth * shieldIndex;
+    const cells = Array.from(
+      { length: SHIELD_CELL_ROWS * SHIELD_CELL_COLS },
+      (_, cellIndex) => {
+        const row = Math.floor(cellIndex / SHIELD_CELL_COLS);
+        const col = cellIndex % SHIELD_CELL_COLS;
+
+        const cell: ShieldCell = {
+          id: cellId,
+          x: startX + col * SHIELD_CELL_WIDTH,
+          y: startY + row * SHIELD_CELL_HEIGHT,
+          width: SHIELD_CELL_WIDTH,
+          height: SHIELD_CELL_HEIGHT,
+          alive: true
+        };
+
+        cellId += 1;
+        return cell;
+      }
+    );
+
+    return {
+      id: shieldIndex + 1,
+      cells
+    };
+  });
 }
 
 export function createPlayerProjectile(

@@ -8,15 +8,23 @@ import {
   LIFE_LOST_DURATION_MS,
   PLAYER_SHOOT_COOLDOWN_MS,
   PROJECTILE_HEIGHT,
+  PROJECTILE_SPEED,
+  PROJECTILE_WIDTH,
   RESPAWN_INVULNERABILITY_MS,
+  SHIELD_COUNT,
+  SHIELD_CELL_COLS,
+  SHIELD_CELL_ROWS,
   STARTING_LIVES,
   createGameState,
   createPlayingState,
   getFormationSpeed,
   getPlayerMaxX,
-  getPlayerMinX
+  getPlayerMinX,
+  type GameState
 } from "./state";
 import { step } from "./step";
+
+const SHIELD_HIT_DT_MS = 21;
 
 function createRespawnedPlayingState() {
   const lifeLost = {
@@ -31,6 +39,55 @@ function createRespawnedPlayingState() {
   };
 
   return step(lifeLost, 60, EMPTY_INPUT);
+}
+
+function getShieldCell(state: GameState, shieldIndex: number, row: number, col: number) {
+  const cell = state.shields[shieldIndex]?.cells[row * SHIELD_CELL_COLS + col];
+  if (cell === undefined) {
+    throw new Error(`Missing shield cell ${shieldIndex}:${row},${col}`);
+  }
+  return cell;
+}
+
+function countAliveShieldCells(state: GameState): number {
+  return state.shields.flatMap((shield) => shield.cells).filter((cell) => cell.alive).length;
+}
+
+function setShieldCellAlive(state: GameState, cellId: number, alive: boolean): GameState {
+  return {
+    ...state,
+    shields: state.shields.map((shield) => ({
+      ...shield,
+      cells: shield.cells.map((cell) =>
+        cell.id === cellId
+          ? {
+              ...cell,
+              alive
+            }
+          : cell
+      )
+    }))
+  };
+}
+
+function createShieldProjectile(
+  state: GameState,
+  row: number,
+  col: number,
+  id: number,
+  velocityY: number
+) {
+  const cell = getShieldCell(state, 0, row, col);
+  return {
+    id,
+    owner: "player" as const,
+    x: cell.x + (cell.width - PROJECTILE_WIDTH) / 2,
+    y: velocityY < 0 ? cell.y + cell.height + 4 : cell.y - PROJECTILE_HEIGHT - 4,
+    width: PROJECTILE_WIDTH,
+    height: PROJECTILE_HEIGHT,
+    velocityY,
+    active: true
+  };
 }
 
 describe("step", () => {
@@ -98,6 +155,85 @@ describe("step", () => {
 
     expect(next.projectiles).toHaveLength(1);
     expect(next.player.shootCooldownMs).toBe(PLAYER_SHOOT_COOLDOWN_MS);
+  });
+
+  it("creates a full set of live shield cells for a fresh playing state", () => {
+    const state = createPlayingState();
+
+    expect(state.shields).toHaveLength(SHIELD_COUNT);
+    expect(countAliveShieldCells(state)).toBe(SHIELD_COUNT * SHIELD_CELL_ROWS * SHIELD_CELL_COLS);
+    expect(state.shields.flatMap((shield) => shield.cells).every((cell) => cell.alive)).toBe(true);
+  });
+
+  it.each([
+    ["destroys exactly one shield cell from an upward projectile and consumes it", SHIELD_CELL_ROWS - 1, PROJECTILE_SPEED],
+    ["destroys a shield cell from above with a downward projectile and consumes it", 0, Math.abs(PROJECTILE_SPEED)]
+  ])("%s", (_, targetRow, velocityY) => {
+    const targetCol = 2;
+    const base = createPlayingState();
+    const next = step(
+      {
+        ...base,
+        projectiles: [createShieldProjectile(base, targetRow, targetCol, 1, velocityY)],
+        nextProjectileId: 2
+      },
+      SHIELD_HIT_DT_MS,
+      EMPTY_INPUT
+    );
+
+    expect(next.projectiles).toHaveLength(0);
+    expect(getShieldCell(next, 0, targetRow, targetCol).alive).toBe(false);
+    expect(countAliveShieldCells(next)).toBe(countAliveShieldCells(base) - 1);
+  });
+
+  it("lets a projectile continue through a dead shield-cell gap", () => {
+    const targetRow = SHIELD_CELL_ROWS - 1;
+    const targetCol = 2;
+    const base = createPlayingState();
+    const cell = getShieldCell(base, 0, targetRow, targetCol);
+    const stateWithGap = setShieldCellAlive(base, cell.id, false);
+    const projectile = createShieldProjectile(stateWithGap, targetRow, targetCol, 1, PROJECTILE_SPEED);
+    const state = {
+      ...stateWithGap,
+      projectiles: [projectile],
+      nextProjectileId: 2
+    };
+
+    const next = step(state, SHIELD_HIT_DT_MS, EMPTY_INPUT);
+
+    expect(next.projectiles).toHaveLength(1);
+    expect(next.projectiles[0]?.y).toBeLessThan(projectile.y);
+    expect(getShieldCell(next, 0, targetRow, targetCol).alive).toBe(false);
+    expect(countAliveShieldCells(next)).toBe(countAliveShieldCells(stateWithGap));
+  });
+
+  it("only destroys a shield cell once and later projectiles pass through that slot", () => {
+    const targetRow = SHIELD_CELL_ROWS - 1;
+    const targetCol = 2;
+    const base = createPlayingState();
+    const firstHitState = {
+      ...base,
+      projectiles: [createShieldProjectile(base, targetRow, targetCol, 1, PROJECTILE_SPEED)],
+      nextProjectileId: 2
+    };
+
+    const afterFirstHit = step(firstHitState, SHIELD_HIT_DT_MS, EMPTY_INPUT);
+    const secondShot = createShieldProjectile(afterFirstHit, targetRow, targetCol, 2, PROJECTILE_SPEED);
+    const secondState = {
+      ...afterFirstHit,
+      projectiles: [secondShot],
+      nextProjectileId: 3
+    };
+
+    const afterSecondHit = step(secondState, SHIELD_HIT_DT_MS, EMPTY_INPUT);
+
+    expect(getShieldCell(afterFirstHit, 0, targetRow, targetCol).alive).toBe(false);
+    expect(getShieldCell(afterSecondHit, 0, targetRow, targetCol).alive).toBe(false);
+    expect(countAliveShieldCells(afterSecondHit)).toBe(
+      countAliveShieldCells(afterFirstHit)
+    );
+    expect(afterSecondHit.projectiles).toHaveLength(1);
+    expect(afterSecondHit.projectiles[0]?.y).toBeLessThan(secondShot.y);
   });
 
   it("does not fire another projectile while the cooldown is active", () => {

@@ -13,7 +13,8 @@ import {
   type GameState,
   type Input,
   type Invader,
-  type Projectile
+  type Projectile,
+  type Shield
 } from "./state";
 
 type Rect = {
@@ -146,9 +147,17 @@ function advancePlaying(state: GameState, dtMs: number, input: Input): GameState
     input.firePressed,
     playerShootFrame
   );
-  const movedProjectiles = moveProjectiles(projectileBundle.projectiles, dtSeconds, state.arena.height);
+  const projectileShieldBundle = moveProjectilesThroughShields(
+    projectileBundle.projectiles,
+    dtSeconds,
+    state.arena.height,
+    state.shields
+  );
   const formationBundle = moveInvaders(state, dtSeconds);
-  const collisionBundle = resolveProjectileHits(movedProjectiles, formationBundle.invaders);
+  const collisionBundle = resolveProjectileHits(
+    projectileShieldBundle.projectiles,
+    formationBundle.invaders
+  );
   const score = state.hud.score + collisionBundle.scoreDelta;
   const marchFrame = formationBundle.didAdvance
     ? toggleMarchFrame(state.marchFrame)
@@ -167,6 +176,7 @@ function advancePlaying(state: GameState, dtMs: number, input: Input): GameState
         shootCooldownMs: 0
       },
       projectiles: [],
+      shields: projectileShieldBundle.shields,
       invaders: collisionBundle.invaders,
       formation: formationBundle.formation,
       hud: {
@@ -192,6 +202,7 @@ function advancePlaying(state: GameState, dtMs: number, input: Input): GameState
         shootCooldownMs: projectileBundle.playerShootCooldownMs
       },
       projectiles: [],
+      shields: projectileShieldBundle.shields,
       invaders: [],
       formation: formationBundle.formation,
       hud: {
@@ -214,6 +225,7 @@ function advancePlaying(state: GameState, dtMs: number, input: Input): GameState
       shootCooldownMs: projectileBundle.playerShootCooldownMs
     },
     projectiles: collisionBundle.projectiles,
+    shields: projectileShieldBundle.shields,
     invaders: collisionBundle.invaders,
     formation: formationBundle.formation,
     hud: {
@@ -261,22 +273,57 @@ function maybeSpawnProjectile(
   };
 }
 
-function moveProjectiles(
+function moveProjectilesThroughShields(
   projectiles: Projectile[],
   dtSeconds: number,
-  arenaHeight: number
-): Projectile[] {
-  return projectiles
-    .map((projectile) => ({
+  arenaHeight: number,
+  shields: Shield[]
+): {
+  projectiles: Projectile[];
+  shields: Shield[];
+} {
+  let nextShields = shields;
+  const nextProjectiles: Projectile[] = [];
+
+  for (const projectile of projectiles) {
+    const movedProjectile = {
       ...projectile,
       y: projectile.y + projectile.velocityY * dtSeconds
-    }))
-    .filter(
-      (projectile) =>
-        projectile.active &&
-        projectile.y + projectile.height >= 0 &&
-        projectile.y <= arenaHeight
-    );
+    };
+    const collision = findShieldCollision(projectile, movedProjectile, nextShields);
+
+    if (collision !== undefined) {
+      nextShields = nextShields.map((shield) =>
+        shield.id !== collision.shieldId
+          ? shield
+          : {
+              ...shield,
+              cells: shield.cells.map((cell) =>
+                cell.id !== collision.cellId
+                  ? cell
+                  : {
+                      ...cell,
+                      alive: false
+                    }
+              )
+            }
+      );
+      continue;
+    }
+
+    if (
+      movedProjectile.active &&
+      movedProjectile.y + movedProjectile.height >= 0 &&
+      movedProjectile.y <= arenaHeight
+    ) {
+      nextProjectiles.push(movedProjectile);
+    }
+  }
+
+  return {
+    projectiles: nextProjectiles,
+    shields: nextShields
+  };
 }
 
 function moveInvaders(
@@ -365,6 +412,75 @@ function resolveProjectileHits(
       (projectile) => !consumedProjectileIds.has(projectile.id)
     ),
     scoreDelta
+  };
+}
+
+function findShieldCollision(
+  projectile: Projectile,
+  movedProjectile: Projectile,
+  shields: Shield[]
+):
+  | {
+      shieldId: number;
+      cellId: number;
+    }
+  | undefined {
+  const path = getProjectilePath(projectile, movedProjectile);
+  const movingDown = movedProjectile.velocityY > 0;
+  let collision:
+    | {
+        shieldId: number;
+        cellId: number;
+        edge: number;
+      }
+    | undefined;
+
+  for (const shield of shields) {
+    for (const cell of shield.cells) {
+      if (!cell.alive || !intersects(cell, path)) {
+        continue;
+      }
+
+      const edge = movingDown ? cell.y : cell.y + cell.height;
+      if (
+        collision === undefined ||
+        (movingDown ? edge < collision.edge : edge > collision.edge) ||
+        (edge === collision.edge && cell.id < collision.cellId)
+      ) {
+        collision = {
+          shieldId: shield.id,
+          cellId: cell.id,
+          edge
+        };
+      }
+    }
+  }
+
+  return collision === undefined
+    ? undefined
+    : { shieldId: collision.shieldId, cellId: collision.cellId };
+}
+
+function getProjectilePath(
+  projectile: Projectile,
+  movedProjectile: Projectile
+): Rect {
+  const left = Math.min(projectile.x, movedProjectile.x);
+  const right = Math.max(
+    projectile.x + projectile.width,
+    movedProjectile.x + movedProjectile.width
+  );
+  const top = Math.min(projectile.y, movedProjectile.y);
+  const bottom = Math.max(
+    projectile.y + projectile.height,
+    movedProjectile.y + movedProjectile.height
+  );
+
+  return {
+    x: left,
+    y: top,
+    width: right - left,
+    height: bottom - top
   };
 }
 
