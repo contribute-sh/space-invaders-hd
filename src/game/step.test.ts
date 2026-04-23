@@ -4,7 +4,9 @@ import {
   EMPTY_INPUT,
   FORMATION_SPEED_MAX,
   INVADER_COLS,
+  INVADER_FIRE_INTERVAL_MS,
   INVADER_HEIGHT,
+  INVADER_PROJECTILE_SPEED,
   INVADER_ROWS,
   LIFE_LOST_DURATION_MS,
   PLAYER_SHOOT_COOLDOWN_MS,
@@ -16,6 +18,7 @@ import {
   SHIELD_CELL_COLS,
   SHIELD_CELL_ROWS,
   STARTING_LIVES,
+  createInvaderProjectile,
   createGameState,
   createPlayingState,
   getFormationSpeed,
@@ -89,6 +92,33 @@ function createShieldProjectile(
     velocityY,
     active: true
   };
+}
+
+function createInvaderProjectileState(
+  state: GameState,
+  overrides: Partial<GameState["projectiles"][number]> = {}
+): GameState {
+  const invader = state.invaders[0];
+
+  if (invader === undefined) {
+    throw new Error("Missing invader");
+  }
+
+  const projectile = {
+    ...createInvaderProjectile({ ...state, nextProjectileId: overrides.id ?? 1 }, invader),
+    ...overrides,
+    owner: "invader" as const
+  };
+
+  return {
+    ...state,
+    projectiles: [projectile],
+    nextProjectileId: projectile.id + 1
+  };
+}
+
+function createPlayerHitState(state: GameState): GameState {
+  return createInvaderProjectileState(state, { x: state.player.x, y: state.player.y, width: state.player.width, height: state.player.height, velocityY: 0 });
 }
 
 describe("step", () => {
@@ -282,6 +312,56 @@ describe("step", () => {
     const next = step(state, 16, EMPTY_INPUT);
 
     expect(next.projectiles).toHaveLength(0);
+  });
+
+  it("spawns an invader projectile when the fire cadence elapses", () => {
+    const next = step(createPlayingState({ invaderFireCooldownMs: INVADER_FIRE_INTERVAL_MS }), INVADER_FIRE_INTERVAL_MS, EMPTY_INPUT);
+    expect(next.projectiles.some((projectile) => projectile.owner === "invader")).toBe(true);
+  });
+
+  it.each(["start", "waveClear", "gameOver", "paused"] as const)(
+    "does not spawn invader projectiles during %s",
+    (phase) => {
+      const next = step(createGameState({ phase, invaderFireCooldownMs: 0 }), INVADER_FIRE_INTERVAL_MS, EMPTY_INPUT);
+      expect(next.projectiles.some((projectile) => projectile.owner === "invader")).toBe(false);
+    }
+  );
+
+  it("moves invader projectiles downward and removes them at the floor", () => {
+    const base = createPlayingState();
+    const movingState = createInvaderProjectileState(base, { id: 1 });
+    const movingProjectile = movingState.projectiles[0];
+    const moved = step(movingState, 50, EMPTY_INPUT);
+    const floorState = createInvaderProjectileState(base, { id: 1, y: base.arena.floorY - 1, velocityY: INVADER_PROJECTILE_SPEED });
+    const removed = step(floorState, 16, EMPTY_INPUT);
+
+    expect(moved.projectiles[0]?.y).toBeGreaterThan(movingProjectile?.y ?? 0);
+    expect(removed.projectiles).toHaveLength(0);
+  });
+
+  it.each([["enters life lost when an invader projectile overlaps the player", 3, "lifeLost"], ["reaches game over after an invader projectile takes the final life", 1, "gameOver"]] as const)("%s", (_, lives, resolvedPhase) => {
+    const base = createPlayingState({ lives });
+    const lifeLost = step(createPlayerHitState(base), 0, EMPTY_INPUT);
+    const resolved = resolvedPhase === "lifeLost" ? lifeLost : step(lifeLost, LIFE_LOST_DURATION_MS, EMPTY_INPUT);
+
+    expect(lifeLost.phase).toBe("lifeLost");
+    expect(lifeLost.hud.lives).toBe(lives - 1);
+    expect(resolved.phase).toBe(resolvedPhase);
+  });
+
+  it("does not lose another life from overlapping invader projectiles during life lost", () => {
+    const base = createPlayingState({ lives: 2 });
+    const lifeLost = {
+      ...base,
+      phase: "lifeLost" as const,
+      transitionTimerMs: LIFE_LOST_DURATION_MS,
+      projectiles: createPlayerHitState(base).projectiles, nextProjectileId: 2
+    };
+
+    const next = step(lifeLost, 16, EMPTY_INPUT);
+
+    expect(next.phase).toBe("lifeLost");
+    expect(next.hud.lives).toBe(lifeLost.hud.lives);
   });
 
   it("destroys an invader and adds score on hit", () => {
