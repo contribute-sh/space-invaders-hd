@@ -45,7 +45,7 @@ export function step(state: GameState, dtMs: number, input: Input = EMPTY_INPUT)
           })
         : advanceFrame(state);
     case "gameOver":
-      return input.firePressed
+      return input.restartPressed
         ? createGameState({ phase: "playing" })
         : advanceFrame(state);
     case "paused":

@@ -10,9 +10,11 @@ export function createKeyboardController(target: Window = window): KeyboardContr
     left: false,
     right: false,
     fire: false,
+    restart: false,
     pause: false,
     mute: false,
     fireEdge: false,
+    restartEdge: false,
     pauseEdge: false,
     muteEdge: false
   };
@@ -32,6 +34,13 @@ export function createKeyboardController(target: Window = window): KeyboardContr
           held.fireEdge = true;
         }
         held.fire = true;
+        event.preventDefault();
+        break;
+      case "Enter":
+        if (!held.restart) {
+          held.restartEdge = true;
+        }
+        held.restart = true;
         event.preventDefault();
         break;
       case "KeyP":
@@ -67,6 +76,10 @@ export function createKeyboardController(target: Window = window): KeyboardContr
         held.fire = false;
         event.preventDefault();
         break;
+      case "Enter":
+        held.restart = false;
+        event.preventDefault();
+        break;
       case "KeyP":
         held.pause = false;
         event.preventDefault();
@@ -84,6 +97,7 @@ export function createKeyboardController(target: Window = window): KeyboardContr
     held.left = false;
     held.right = false;
     held.fire = false;
+    held.restart = false;
     held.pause = false;
     held.mute = false;
   };
@@ -103,6 +117,7 @@ export function createKeyboardController(target: Window = window): KeyboardContr
       const snapshot: Input = {
         moveX,
         firePressed: held.fireEdge,
+        restartPressed: held.restartEdge,
         pausePressed: held.pauseEdge,
         fireHeld: held.fire,
         pauseHeld: held.pause,
@@ -110,6 +125,7 @@ export function createKeyboardController(target: Window = window): KeyboardContr
       };
 
       held.fireEdge = false;
+      held.restartEdge = false;
       held.pauseEdge = false;
       held.muteEdge = false;
 
