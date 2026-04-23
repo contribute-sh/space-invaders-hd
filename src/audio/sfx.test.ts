@@ -41,7 +41,7 @@ type MockGainNode = {
 type MockAudioContext = {
   state: AudioContextState;
   readonly destination: MockDestination;
-  readonly currentTime: number;
+  currentTime: number;
   readonly resume: Mock<() => Promise<void>>;
   readonly createOscillator: Mock<() => MockOscillatorNode>;
   readonly createGain: Mock<() => MockGainNode>;
@@ -77,6 +77,7 @@ const SFX_NAMES = [
   "playerDeath",
   "waveClear"
 ] as const satisfies readonly SfxName[];
+const AFTER_SFX_COOLDOWN_SECONDS = 0.031;
 
 let harness: MockWebAudioHarness;
 
@@ -157,15 +158,10 @@ function installMockWebAudio(
         throw new Error("AudioContext unavailable");
       }
 
-      let currentTime = 0;
-
       const context: MockAudioContext = {
         state: harness.initialState,
         destination,
-        get currentTime(): number {
-          currentTime += 0.125;
-          return currentTime;
-        },
+        currentTime: 0,
         resume: vi.fn(async () => {
           context.state = "running";
         }),
@@ -454,12 +450,35 @@ describe("createSfxController", () => {
     expect(signatures.size).toBeGreaterThan(1);
   });
 
-  it("creates fresh oscillator and gain nodes on repeated shoot calls", async () => {
+  it("deduplicates repeated hit playback inside the cooldown window", async () => {
     const controller = createSfxController();
     await controller.arm();
+    const context = getLastContext(harness);
 
-    const firstPlayback = capturePlayback(harness, controller, "shoot");
-    const secondPlayback = capturePlayback(harness, controller, "shoot");
+    context.currentTime = 1;
+    controller.play("hit");
+
+    const createOscillatorCallsBeforeSecondPlay =
+      context.createOscillator.mock.calls.length;
+
+    controller.play("hit");
+
+    expect(
+      context.createOscillator.mock.calls.length -
+        createOscillatorCallsBeforeSecondPlay
+    ).toBe(0);
+  });
+
+  it("schedules hit playback again after the cooldown window elapses", async () => {
+    const controller = createSfxController();
+    await controller.arm();
+    const context = getLastContext(harness);
+
+    context.currentTime = 1;
+    const firstPlayback = capturePlayback(harness, controller, "hit");
+
+    context.currentTime += AFTER_SFX_COOLDOWN_SECONDS;
+    const secondPlayback = capturePlayback(harness, controller, "hit");
 
     expect(firstPlayback.oscillators.length).toBeGreaterThan(0);
     expect(secondPlayback.oscillators.length).toBe(firstPlayback.oscillators.length);
@@ -477,5 +496,42 @@ describe("createSfxController", () => {
     firstPlayback.gains.forEach((gain, index) => {
       expect(secondPlayback.gains[index]).not.toBe(gain);
     });
+  });
+
+  it("tracks cooldowns independently for each SFX name", async () => {
+    const controller = createSfxController();
+    await controller.arm();
+    const context = getLastContext(harness);
+
+    context.currentTime = 1;
+    const hitPlayback = capturePlayback(harness, controller, "hit");
+    const shootPlayback = capturePlayback(harness, controller, "shoot");
+
+    expect(hitPlayback.oscillators.length).toBeGreaterThan(0);
+    expect(shootPlayback.oscillators.length).toBeGreaterThan(0);
+  });
+
+  it("anchors the cooldown to AudioContext.currentTime", async () => {
+    const controller = createSfxController();
+    await controller.arm();
+    const context = getLastContext(harness);
+
+    context.currentTime = 1;
+    controller.play("hit");
+
+    const createOscillatorCallsAfterFirstPlay =
+      context.createOscillator.mock.calls.length;
+
+    controller.play("hit");
+    expect(context.createOscillator).toHaveBeenCalledTimes(
+      createOscillatorCallsAfterFirstPlay
+    );
+
+    context.currentTime += AFTER_SFX_COOLDOWN_SECONDS;
+    controller.play("hit");
+
+    expect(context.createOscillator.mock.calls.length).toBeGreaterThan(
+      createOscillatorCallsAfterFirstPlay
+    );
   });
 });
