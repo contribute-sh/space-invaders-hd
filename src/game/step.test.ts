@@ -408,7 +408,12 @@ describe("step", () => {
   it("keeps the paused state frozen without resume input", () => {
     const state = createGameState({ phase: "paused", score: 55, lives: 2 });
 
-    const next = step(state, 200, { moveX: 1, firePressed: true, pausePressed: false });
+    const next = step(state, 200, {
+      moveX: 1,
+      firePressed: true,
+      restartPressed: false,
+      pausePressed: false
+    });
 
     expect(next).toEqual(state);
   });
@@ -540,6 +545,7 @@ describe("step", () => {
     const next = step(lifeLost, 100, {
       moveX: 1,
       firePressed: true,
+      restartPressed: false,
       pausePressed: true
     });
 
@@ -673,6 +679,25 @@ describe("step", () => {
     expect(next.hud.score).toBe(999);
   });
 
+  it("keeps game over active when only fire is pressed", () => {
+    const state = createGameState({
+      phase: "gameOver",
+      wave: 4,
+      score: 650,
+      lives: 0
+    });
+
+    const next = step(state, 16, {
+      ...EMPTY_INPUT,
+      firePressed: true
+    });
+
+    expect(next.phase).toBe("gameOver");
+    expect(next.hud.score).toBe(650);
+    expect(next.hud.wave).toBe(4);
+    expect(next.hud.lives).toBe(0);
+  });
+
   it("restarts a fresh run from game over", () => {
     const state = createGameState({
       phase: "gameOver",
@@ -681,7 +706,7 @@ describe("step", () => {
       lives: 0
     });
 
-    const next = step(state, 16, { ...EMPTY_INPUT, firePressed: true });
+    const next = step(state, 16, { ...EMPTY_INPUT, restartPressed: true });
 
     expect(next.phase).toBe("playing");
     expect(next.hud.score).toBe(0);
@@ -765,7 +790,7 @@ describe("step", () => {
       expect(gameOver.hud.lives).toBe(0);
     });
 
-    it("resets to a fresh first wave when fire is pressed from game over", () => {
+    it("resets to a fresh first wave when Enter is pressed from game over", () => {
       const state = createGameState({
         phase: "gameOver",
         wave: 4,
@@ -773,7 +798,7 @@ describe("step", () => {
         lives: 0
       });
 
-      const next = step(state, 16, { ...EMPTY_INPUT, firePressed: true });
+      const next = step(state, 16, { ...EMPTY_INPUT, restartPressed: true });
 
       expect(next.phase).toBe("playing");
       expect(next.hud.score).toBe(0);

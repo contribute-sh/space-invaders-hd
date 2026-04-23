@@ -9,6 +9,7 @@ export type GamePhase =
 export type Input = {
   moveX: -1 | 0 | 1;
   firePressed: boolean;
+  restartPressed: boolean;
   pausePressed: boolean;
   fireHeld?: boolean;
   pauseHeld?: boolean;
@@ -147,6 +148,7 @@ export const RESPAWN_INVULNERABILITY_MS = 1500;
 export const EMPTY_INPUT: Input = {
   moveX: 0,
   firePressed: false,
+  restartPressed: false,
   pausePressed: false,
   fireHeld: false,
   pauseHeld: false,
