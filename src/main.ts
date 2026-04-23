@@ -1,12 +1,18 @@
 import { deriveSfxEvents } from "./audio/events";
 import { createMuteStore } from "./audio/mute";
 import { createSfxController } from "./audio/sfx";
-import { createInitialGameState, type GameState, type Input } from "./game/state";
+import {
+  EMPTY_INPUT,
+  createInitialGameState,
+  type GameState,
+  type Input
+} from "./game/state";
 import { step } from "./game/step";
 import { createKeyboardController } from "./input/keyboard";
 import { createFixedStepLoop } from "./loop/fixedStep";
 import { createHighScoreStore } from "./persistence";
 import { createCanvasRenderer, type CanvasRenderer } from "./render/canvas";
+import { createVisibilityPauseController } from "./visibility";
 
 const FIXED_TIMESTEP_MS = 1000 / 60;
 type RuntimeRenderFlags = Parameters<CanvasRenderer["render"]>[1];
@@ -33,6 +39,21 @@ renderer.render(state, createRenderFlags(muteStore.isMuted()));
 bootstrapping = false;
 maybeArmAudio(state.phase, frameInput);
 
+const visibilityPauseController = createVisibilityPauseController({
+  target: document,
+  isHidden: () => document.hidden,
+  onHide: () => {
+    if (state.phase !== "playing") {
+      return;
+    }
+
+    advanceState(0, {
+      ...EMPTY_INPUT,
+      pausePressed: true
+    });
+  }
+});
+
 const loop = createFixedStepLoop({
   stepMs: FIXED_TIMESTEP_MS,
   onStep: ({ dtMs, firstStepOfFrame }) => {
@@ -44,10 +65,7 @@ const loop = createFixedStepLoop({
           pausePressed: false,
           mutePressed: false
         };
-    const previousState = state;
-    state = step(state, dtMs, stepInput);
-    maybeRecordHighScore(previousState, state);
-    playDerivedEvents(previousState, state);
+    advanceState(dtMs, stepInput);
   },
   onRender: () => {
     frameInput = keyboard.snapshot();
@@ -65,6 +83,7 @@ const loop = createFixedStepLoop({
 window.addEventListener("beforeunload", () => {
   loop.stop();
   keyboard.dispose();
+  visibilityPauseController.dispose();
 });
 
 loop.start();
@@ -85,6 +104,13 @@ function maybeArmAudio(phase: GameState["phase"], input: Input): void {
 
   audioAttempted = true;
   void sfx.arm();
+}
+
+function advanceState(dtMs: number, input: Input): void {
+  const previousState = state;
+  state = step(state, dtMs, input);
+  maybeRecordHighScore(previousState, state);
+  playDerivedEvents(previousState, state);
 }
 
 function playDerivedEvents(previousState: GameState, nextState: GameState): void {
