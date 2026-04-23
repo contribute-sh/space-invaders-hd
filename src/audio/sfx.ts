@@ -14,10 +14,13 @@ type Tone = {
   type: OscillatorType;
 };
 
+const SFX_COOLDOWN_SECONDS = 0.03;
+
 export function createSfxController(): SfxController {
   let context: AudioContext | null = null;
   let status: "idle" | "ready" | "muted" = "idle";
   let muted = false;
+  const lastPlayedAtByName = new Map<SfxName, number>();
 
   return {
     arm: async () => {
@@ -26,7 +29,10 @@ export function createSfxController(): SfxController {
       }
 
       try {
-        context ??= new AudioContext();
+        if (context === null) {
+          context = new AudioContext();
+          lastPlayedAtByName.clear();
+        }
         if (context.state === "suspended") {
           await context.resume();
         }
@@ -41,9 +47,19 @@ export function createSfxController(): SfxController {
         return;
       }
 
+      const now = context.currentTime;
+      const lastPlayedAt = lastPlayedAtByName.get(name);
+
+      if (
+        lastPlayedAt !== undefined &&
+        now - lastPlayedAt < SFX_COOLDOWN_SECONDS
+      ) {
+        return;
+      }
+
+      lastPlayedAtByName.set(name, now);
       const tones = getTonePattern(name);
       let offset = 0;
-      const now = context.currentTime;
 
       for (const tone of tones) {
         playTone(context, now + offset, tone);
