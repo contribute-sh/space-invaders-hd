@@ -4,7 +4,11 @@ import {
   EMPTY_INPUT,
   FORMATION_SPEED_MAX,
   INVADER_COLS,
+  INVADER_FIRE_INTERVAL_MS,
   INVADER_HEIGHT,
+  INVADER_PROJECTILE_HEIGHT,
+  INVADER_PROJECTILE_SPEED,
+  INVADER_PROJECTILE_WIDTH,
   INVADER_ROWS,
   LIFE_LOST_DURATION_MS,
   PLAYER_SHOOT_COOLDOWN_MS,
@@ -87,6 +91,22 @@ function createShieldProjectile(
     width: PROJECTILE_WIDTH,
     height: PROJECTILE_HEIGHT,
     velocityY,
+    active: true
+  };
+}
+
+function createInvaderTestProjectile(
+  state: GameState,
+  y = state.player.y - INVADER_PROJECTILE_HEIGHT
+) {
+  return {
+    id: 1,
+    owner: "invader" as const,
+    x: state.player.x + (state.player.width - INVADER_PROJECTILE_WIDTH) / 2,
+    y,
+    width: INVADER_PROJECTILE_WIDTH,
+    height: INVADER_PROJECTILE_HEIGHT,
+    velocityY: INVADER_PROJECTILE_SPEED,
     active: true
   };
 }
@@ -282,6 +302,89 @@ describe("step", () => {
     const next = step(state, 16, EMPTY_INPUT);
 
     expect(next.projectiles).toHaveLength(0);
+  });
+
+  it("spawns an invader projectile once the firing cadence elapses", () => {
+    const almost = step(createPlayingState(), INVADER_FIRE_INTERVAL_MS - 1, EMPTY_INPUT);
+
+    expect(almost.projectiles.some((projectile) => projectile.owner === "invader")).toBe(false);
+    expect(step(almost, 1, EMPTY_INPUT).projectiles.some((projectile) => projectile.owner === "invader")).toBe(true);
+  });
+
+  it.each(["start", "waveClear", "gameOver", "paused"] as const)(
+    "does not spawn invader projectiles while %s",
+    (phase) => {
+      expect(
+        step(createGameState({ phase, invaderFireCooldownMs: 0 }), INVADER_FIRE_INTERVAL_MS, EMPTY_INPUT)
+          .projectiles.some((projectile) => projectile.owner === "invader")
+      ).toBe(false);
+    }
+  );
+
+  it("moves invader projectiles downward", () => {
+    const base = createPlayingState();
+    const projectile = createInvaderTestProjectile(base, 120);
+
+    const next = step({ ...base, projectiles: [projectile], nextProjectileId: 2 }, 100, EMPTY_INPUT);
+
+    expect(next.projectiles[0]?.y).toBeGreaterThan(projectile.y);
+  });
+
+  it("removes invader projectiles that leave the arena floor", () => {
+    const base = createPlayingState();
+    const projectile = createInvaderTestProjectile(base, base.arena.floorY - 1);
+
+    const next = step({ ...base, projectiles: [projectile], nextProjectileId: 2 }, 16, EMPTY_INPUT);
+
+    expect(next.projectiles).toHaveLength(0);
+  });
+
+  it("loses a life and enters life lost when an invader projectile hits the player", () => {
+    const base = createPlayingState();
+    const state = {
+      ...base,
+      projectiles: [createInvaderTestProjectile(base, base.player.y)],
+      nextProjectileId: 2
+    };
+
+    const next = step(state, 0, EMPTY_INPUT);
+
+    expect(next.phase).toBe("lifeLost");
+    expect(next.hud.lives).toBe(base.hud.lives - 1);
+    expect(next.projectiles).toHaveLength(0);
+  });
+
+  it("does not lose another life from an overlapping invader projectile during life lost", () => {
+    const base = createPlayingState({ lives: 2 });
+    const lifeLost = {
+      ...base,
+      phase: "lifeLost" as const,
+      transitionTimerMs: LIFE_LOST_DURATION_MS,
+      projectiles: [createInvaderTestProjectile(base, base.player.y)],
+      nextProjectileId: 2
+    };
+
+    const next = step(lifeLost, 16, EMPTY_INPUT);
+
+    expect(next.phase).toBe("lifeLost");
+    expect(next.hud.lives).toBe(lifeLost.hud.lives);
+    expect(next.projectiles).toHaveLength(1);
+  });
+
+  it("reaches game over after the last life is lost to an invader projectile", () => {
+    const base = createPlayingState({ lives: 1 });
+    const state = {
+      ...base,
+      projectiles: [createInvaderTestProjectile(base, base.player.y)],
+      nextProjectileId: 2
+    };
+
+    const lifeLost = step(state, 0, EMPTY_INPUT);
+    const gameOver = step(lifeLost, LIFE_LOST_DURATION_MS, EMPTY_INPUT);
+
+    expect(lifeLost.phase).toBe("lifeLost");
+    expect(lifeLost.hud.lives).toBe(0);
+    expect(gameOver.phase).toBe("gameOver");
   });
 
   it("destroys an invader and adds score on hit", () => {
