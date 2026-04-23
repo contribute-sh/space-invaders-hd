@@ -6,6 +6,7 @@ import { PLAYER_SHIP_DESCRIPTOR } from "./sprites";
 
 const HUD_TOP = 18;
 const HUD_HEIGHT = 68;
+const MUTED_BADGE_TEXT = "Sound unavailable";
 const HUD_SHIP_COLORS = new Set(Object.values(PLAYER_SHIP_DESCRIPTOR.palette));
 
 type FillRectCall = {
@@ -203,5 +204,51 @@ describe("createCanvasRenderer", () => {
           call.y < HUD_TOP + HUD_HEIGHT
       )
     ).toBe(true);
+  });
+
+  it("renders a muted badge label below the HUD when muted", () => {
+    vi.stubGlobal("window", { devicePixelRatio: 1 });
+
+    const context = new FakeCanvasContext();
+    const canvas = createFakeCanvas(context);
+    const renderer = createCanvasRenderer(canvas);
+    const state = createPlayingState();
+
+    renderer.render(state, {
+      bootstrapping: false,
+      highScore: 0,
+      muted: true
+    });
+
+    const mutedBadgeCall = context.fillTextCalls.find((call) =>
+      call.text.includes(MUTED_BADGE_TEXT)
+    );
+
+    expect(mutedBadgeCall).toBeDefined();
+
+    if (mutedBadgeCall === undefined) {
+      throw new Error("Expected muted badge label to be rendered.");
+    }
+
+    expect(mutedBadgeCall.y).toBe(HUD_TOP + HUD_HEIGHT + 32);
+  });
+
+  it("does not render a muted badge label when muted is false", () => {
+    vi.stubGlobal("window", { devicePixelRatio: 1 });
+
+    const context = new FakeCanvasContext();
+    const canvas = createFakeCanvas(context);
+    const renderer = createCanvasRenderer(canvas);
+    const state = createPlayingState();
+
+    renderer.render(state, {
+      bootstrapping: false,
+      highScore: 0,
+      muted: false
+    });
+
+    expect(
+      context.fillTextCalls.some((call) => call.text.includes(MUTED_BADGE_TEXT))
+    ).toBe(false);
   });
 });
