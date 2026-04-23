@@ -45,7 +45,7 @@ export type Invader = {
 
 export type Projectile = {
   id: number;
-  owner: "player";
+  owner: "player" | "invader";
   x: number;
   y: number;
   width: number;
@@ -95,6 +95,7 @@ export type GameState = {
   marchFrame: 0 | 1;
   playerShootFrame: number;
   nextProjectileId: number;
+  invaderFireCooldownMs: number;
   transitionTimerMs: number;
   elapsedMs: number;
 };
@@ -106,6 +107,7 @@ export type GameStateSeed = {
   phase?: GamePhase;
   frame?: number;
   nextProjectileId?: number;
+  invaderFireCooldownMs?: number;
   transitionTimerMs?: number;
   elapsedMs?: number;
 };
@@ -122,6 +124,10 @@ export const STARTING_LIVES = 3;
 export const PROJECTILE_WIDTH = 6;
 export const PROJECTILE_HEIGHT = 18;
 export const PROJECTILE_SPEED = -720;
+export const INVADER_PROJECTILE_WIDTH = 8;
+export const INVADER_PROJECTILE_HEIGHT = 18;
+export const INVADER_PROJECTILE_SPEED = 360;
+export const INVADER_FIRE_INTERVAL_MS = 900;
 export const SHIELD_COUNT = 4;
 export const SHIELD_CELL_ROWS = 4;
 export const SHIELD_CELL_COLS = 6;
@@ -174,6 +180,8 @@ export function createGameState(seed: GameStateSeed = {}): GameState {
   const invaders = createInvaders(arena, wave);
   const shields = createShields(arena);
   const nextProjectileId = seed.nextProjectileId ?? 1;
+  const invaderFireCooldownMs =
+    seed.invaderFireCooldownMs ?? INVADER_FIRE_INTERVAL_MS;
 
   return {
     phase: seed.phase ?? "start",
@@ -192,6 +200,7 @@ export function createGameState(seed: GameStateSeed = {}): GameState {
     marchFrame: 0,
     playerShootFrame: 0,
     nextProjectileId,
+    invaderFireCooldownMs,
     transitionTimerMs: seed.transitionTimerMs ?? 0,
     elapsedMs: seed.elapsedMs ?? 0
   };
@@ -320,6 +329,22 @@ export function createPlayerProjectile(
     width: PROJECTILE_WIDTH,
     height: PROJECTILE_HEIGHT,
     velocityY: PROJECTILE_SPEED,
+    active: true
+  };
+}
+
+export function createInvaderProjectile(
+  state: GameState,
+  invader: Invader
+): Projectile {
+  return {
+    id: state.nextProjectileId,
+    owner: "invader",
+    x: invader.x + invader.width / 2 - INVADER_PROJECTILE_WIDTH / 2,
+    y: invader.y + invader.height,
+    width: INVADER_PROJECTILE_WIDTH,
+    height: INVADER_PROJECTILE_HEIGHT,
+    velocityY: INVADER_PROJECTILE_SPEED,
     active: true
   };
 }

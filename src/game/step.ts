@@ -1,8 +1,10 @@
 import {
   EMPTY_INPUT,
+  INVADER_FIRE_INTERVAL_MS,
   LIFE_LOST_DURATION_MS,
   PLAYER_SHOOT_COOLDOWN_MS,
   RESPAWN_INVULNERABILITY_MS,
+  createInvaderProjectile,
   createGameState,
   createPlayerProjectile,
   getFormationSpeed,
@@ -70,17 +72,31 @@ function advanceFrame(state: GameState): GameState {
 }
 
 function advanceLifeLost(state: GameState, dtMs: number): GameState {
+  const simulatedDtMs = Math.min(dtMs, state.transitionTimerMs);
+  const projectileShieldBundle = moveProjectilesThroughShields(
+    state.projectiles,
+    simulatedDtMs / 1000,
+    state.arena.floorY,
+    state.shields
+  );
+  const invaderFireCooldownMs = Math.max(
+    0,
+    state.invaderFireCooldownMs - simulatedDtMs
+  );
   const remaining = state.transitionTimerMs - dtMs;
 
   if (remaining > 0) {
     return {
       ...state,
+      projectiles: projectileShieldBundle.projectiles,
+      shields: projectileShieldBundle.shields,
+      invaderFireCooldownMs,
       transitionTimerMs: remaining,
-      elapsedMs: state.elapsedMs + dtMs
+      elapsedMs: state.elapsedMs + simulatedDtMs
     };
   }
 
-  const resolvedElapsedMs = state.elapsedMs + state.transitionTimerMs;
+  const resolvedElapsedMs = state.elapsedMs + simulatedDtMs;
 
   if (state.hud.lives > 0) {
     const respawnedState = createGameState({
@@ -90,6 +106,7 @@ function advanceLifeLost(state: GameState, dtMs: number): GameState {
       lives: state.hud.lives,
       frame: state.frame + 1,
       nextProjectileId: state.nextProjectileId,
+      invaderFireCooldownMs,
       elapsedMs: resolvedElapsedMs
     });
 
@@ -107,7 +124,9 @@ function advanceLifeLost(state: GameState, dtMs: number): GameState {
     ...state,
     phase: "gameOver",
     projectiles: [],
+    shields: projectileShieldBundle.shields,
     playerShootFrame: 0,
+    invaderFireCooldownMs,
     transitionTimerMs: 0,
     player: {
       ...state.player,
@@ -131,6 +150,10 @@ function advancePlaying(state: GameState, dtMs: number, input: Input): GameState
   const nextElapsedMs = state.elapsedMs + dtMs;
   const cooldown = Math.max(0, state.player.shootCooldownMs - dtMs);
   const playerShootFrame = Math.max(0, state.playerShootFrame - dtMs);
+  const invaderFireCooldownMs = Math.max(
+    0,
+    state.invaderFireCooldownMs - dtMs
+  );
   const movedPlayer = {
     ...state.player,
     x: clamp(
@@ -141,16 +164,17 @@ function advancePlaying(state: GameState, dtMs: number, input: Input): GameState
     shootCooldownMs: cooldown
   };
 
-  const projectileBundle = maybeSpawnProjectile(
+  const projectileBundle = maybeSpawnProjectiles(
     state,
     movedPlayer,
     input.firePressed,
-    playerShootFrame
+    playerShootFrame,
+    invaderFireCooldownMs
   );
   const projectileShieldBundle = moveProjectilesThroughShields(
     projectileBundle.projectiles,
     dtSeconds,
-    state.arena.height,
+    state.arena.floorY,
     state.shields
   );
   const formationBundle = moveInvaders(state, dtSeconds);
@@ -164,8 +188,24 @@ function advancePlaying(state: GameState, dtMs: number, input: Input): GameState
     : state.marchFrame;
   const playerIsInvulnerable =
     movedPlayer.invulnerableUntilMs > nextElapsedMs;
+  const playerHitProjectile = playerIsInvulnerable
+    ? undefined
+    : collisionBundle.projectiles.find(
+        (projectile) =>
+          projectile.owner === "invader" && intersects(projectile, movedPlayer)
+      );
+  const remainingProjectiles =
+    playerHitProjectile === undefined
+      ? collisionBundle.projectiles
+      : collisionBundle.projectiles.filter(
+          (projectile) => projectile.id !== playerHitProjectile.id
+        );
 
-  if (!playerIsInvulnerable && hasInvaderBreached(collisionBundle.invaders, movedPlayer)) {
+  if (
+    !playerIsInvulnerable &&
+    (playerHitProjectile !== undefined ||
+      hasInvaderBreached(collisionBundle.invaders, movedPlayer))
+  ) {
     return {
       ...state,
       phase: "lifeLost",
@@ -175,7 +215,7 @@ function advancePlaying(state: GameState, dtMs: number, input: Input): GameState
         ...movedPlayer,
         shootCooldownMs: 0
       },
-      projectiles: [],
+      projectiles: remainingProjectiles,
       shields: projectileShieldBundle.shields,
       invaders: collisionBundle.invaders,
       formation: formationBundle.formation,
@@ -184,6 +224,7 @@ function advancePlaying(state: GameState, dtMs: number, input: Input): GameState
         score,
         lives: Math.max(0, state.hud.lives - 1)
       },
+      invaderFireCooldownMs: projectileBundle.invaderFireCooldownMs,
       transitionTimerMs: LIFE_LOST_DURATION_MS,
       frame: nextFrame,
       nextProjectileId: projectileBundle.nextProjectileId,
@@ -209,6 +250,7 @@ function advancePlaying(state: GameState, dtMs: number, input: Input): GameState
         ...state.hud,
         score
       },
+      invaderFireCooldownMs: projectileBundle.invaderFireCooldownMs,
       transitionTimerMs: 0,
       frame: nextFrame,
       nextProjectileId: projectileBundle.nextProjectileId,
@@ -233,50 +275,88 @@ function advancePlaying(state: GameState, dtMs: number, input: Input): GameState
       score
     },
     frame: nextFrame,
+    invaderFireCooldownMs: projectileBundle.invaderFireCooldownMs,
     transitionTimerMs: 0,
     nextProjectileId: projectileBundle.nextProjectileId,
     elapsedMs: nextElapsedMs
   };
 }
 
-function maybeSpawnProjectile(
+function maybeSpawnProjectiles(
   state: GameState,
   player: GameState["player"],
   firePressed: boolean,
-  playerShootFrame: number
+  playerShootFrame: number,
+  invaderFireCooldownMs: number
 ): {
   nextProjectileId: number;
+  invaderFireCooldownMs: number;
   playerShootCooldownMs: number;
   playerShootFrame: number;
   projectiles: Projectile[];
 } {
-  if (!firePressed || player.shootCooldownMs > 0) {
-    return {
-      nextProjectileId: state.nextProjectileId,
-      playerShootCooldownMs: player.shootCooldownMs,
-      playerShootFrame,
-      projectiles: state.projectiles
-    };
+  let nextProjectileId = state.nextProjectileId;
+  let nextPlayerShootCooldownMs = player.shootCooldownMs;
+  let nextPlayerShootFrame = playerShootFrame;
+  let nextProjectiles = state.projectiles;
+  let nextInvaderFireCooldownMs = invaderFireCooldownMs;
+  let firingInvader: Invader | undefined;
+
+  if (firePressed && player.shootCooldownMs <= 0) {
+    const playerProjectile = createPlayerProjectile(
+      {
+        ...state,
+        nextProjectileId
+      },
+      getProjectileSpawnX(player),
+      getProjectileSpawnY(player)
+    );
+
+    nextProjectiles = [...nextProjectiles, playerProjectile];
+    nextProjectileId += 1;
+    nextPlayerShootCooldownMs = PLAYER_SHOOT_COOLDOWN_MS;
+    nextPlayerShootFrame = PLAYER_SHOOT_FRAME_DURATION_MS;
   }
 
-  const projectile = createPlayerProjectile(
-    state,
-    getProjectileSpawnX(player),
-    getProjectileSpawnY(player)
-  );
+  if (nextInvaderFireCooldownMs <= 0) {
+    for (const invader of state.invaders) {
+      if (
+        firingInvader === undefined ||
+        invader.col < firingInvader.col ||
+        (invader.col === firingInvader.col && invader.row > firingInvader.row)
+      ) {
+        firingInvader = invader;
+      }
+    }
+
+    if (firingInvader !== undefined) {
+      const invaderProjectile = createInvaderProjectile(
+        {
+          ...state,
+          nextProjectileId
+        },
+        firingInvader
+      );
+
+      nextProjectiles = [...nextProjectiles, invaderProjectile];
+      nextProjectileId += 1;
+      nextInvaderFireCooldownMs = INVADER_FIRE_INTERVAL_MS;
+    }
+  }
 
   return {
-    nextProjectileId: state.nextProjectileId + 1,
-    playerShootCooldownMs: PLAYER_SHOOT_COOLDOWN_MS,
-    playerShootFrame: PLAYER_SHOOT_FRAME_DURATION_MS,
-    projectiles: [...state.projectiles, projectile]
+    nextProjectileId,
+    invaderFireCooldownMs: nextInvaderFireCooldownMs,
+    playerShootCooldownMs: nextPlayerShootCooldownMs,
+    playerShootFrame: nextPlayerShootFrame,
+    projectiles: nextProjectiles
   };
 }
 
 function moveProjectilesThroughShields(
   projectiles: Projectile[],
   dtSeconds: number,
-  arenaHeight: number,
+  arenaFloorY: number,
   shields: Shield[]
 ): {
   projectiles: Projectile[];
@@ -313,8 +393,8 @@ function moveProjectilesThroughShields(
 
     if (
       movedProjectile.active &&
-      movedProjectile.y + movedProjectile.height >= 0 &&
-      movedProjectile.y <= arenaHeight
+      movedProjectile.y >= 0 &&
+      movedProjectile.y <= arenaFloorY
     ) {
       nextProjectiles.push(movedProjectile);
     }
@@ -391,7 +471,10 @@ function resolveProjectileHits(
   for (const invader of invaders) {
     let hit = false;
     for (const projectile of projectiles) {
-      if (consumedProjectileIds.has(projectile.id)) {
+      if (
+        projectile.owner !== "player" ||
+        consumedProjectileIds.has(projectile.id)
+      ) {
         continue;
       }
       if (intersects(invader, projectile)) {
