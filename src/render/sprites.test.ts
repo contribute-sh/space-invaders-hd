@@ -6,6 +6,7 @@ import {
   PLAYER_SHIP_DESCRIPTOR,
   SPRITE_DESCRIPTORS,
   createSpriteSheet,
+  getSprite,
   type SpriteCanvasContext,
   type SpriteDescriptor
 } from "./sprites";
@@ -46,6 +47,26 @@ class FakeSpriteContext implements SpriteCanvasContext {
       height
     });
   }
+}
+
+function expectPreparedSpriteToMatchDescriptor(
+  key: string,
+  descriptor: SpriteDescriptor,
+  pixelSize = descriptor.pixelSize
+): void {
+  const firstFrame = descriptor.frames[0];
+  const firstRow = firstFrame?.[0];
+
+  if (firstFrame === undefined || firstRow === undefined) {
+    throw new Error(`Test descriptor "${descriptor.id}" must include a frame.`);
+  }
+
+  const sprite = getSprite(key);
+
+  expect(sprite.frameCount).toBe(descriptor.frames.length);
+  expect(sprite.width).toBe(firstRow.length * pixelSize);
+  expect(sprite.height).toBe(firstFrame.length * pixelSize);
+  expect(sprite.sheet.getFrameCount()).toBe(sprite.frameCount);
 }
 
 describe("createSpriteSheet", () => {
@@ -165,5 +186,30 @@ describe("createSpriteSheet", () => {
     const context = new FakeSpriteContext();
 
     expect(() => spriteSheet.drawFrame(context, 99, 0, 0)).toThrow(RangeError);
+  });
+});
+
+describe("getSprite", () => {
+  it("returns a prepared sprite for each supported registry key", () => {
+    expectPreparedSpriteToMatchDescriptor("player-ship", PLAYER_SHIP_DESCRIPTOR);
+    expectPreparedSpriteToMatchDescriptor(
+      "hud-player-ship",
+      PLAYER_SHIP_DESCRIPTOR,
+      2
+    );
+    expectPreparedSpriteToMatchDescriptor(
+      "player-projectile",
+      PLAYER_PROJECTILE_DESCRIPTOR
+    );
+
+    for (const descriptor of INVADER_ROW_DESCRIPTORS) {
+      expectPreparedSpriteToMatchDescriptor(descriptor.id, descriptor);
+    }
+  });
+
+  it("throws for an unknown registry key", () => {
+    expect(() => getSprite("missing-sprite")).toThrowError(
+      'Unknown sprite key "missing-sprite".'
+    );
   });
 });
