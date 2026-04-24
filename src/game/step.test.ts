@@ -732,7 +732,11 @@ describe("step", () => {
   it("keeps the paused state frozen without resume input", () => {
     const state = createGameState({ phase: "paused", score: 55, lives: 2 });
 
-    const next = step(state, 200, { moveX: 1, firePressed: true, pausePressed: false });
+    const next = step(state, 200, {
+      ...EMPTY_INPUT,
+      moveX: 1,
+      firePressed: true
+    });
 
     expect(next).toEqual(state);
   });
@@ -924,6 +928,7 @@ describe("step", () => {
     };
 
     const next = step(lifeLost, 100, {
+      ...EMPTY_INPUT,
       moveX: 1,
       firePressed: true,
       pausePressed: true
