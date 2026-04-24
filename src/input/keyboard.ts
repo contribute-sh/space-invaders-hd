@@ -86,6 +86,9 @@ export function createKeyboardController(target: Window = window): KeyboardContr
     held.fire = false;
     held.pause = false;
     held.mute = false;
+    held.fireEdge = false;
+    held.pauseEdge = false;
+    held.muteEdge = false;
   };
 
   target.addEventListener("keydown", onKeyDown);
