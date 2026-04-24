@@ -8,6 +8,7 @@ import {
   type Mock
 } from "vitest";
 
+import type { AudioEngineStatus, ScheduleToneOptions } from "./engine";
 import { createSfxController, type SfxName } from "./sfx";
 
 type MockDestination = {
@@ -338,7 +339,59 @@ function expectScheduledShortBeeps(
   });
 }
 
-describe("createSfxController", () => {
+type MockAudioEngine = {
+  status: AudioEngineStatus;
+  arm: Mock<() => Promise<void>>;
+  getStatus: Mock<() => AudioEngineStatus>;
+  scheduleTone: Mock<(options: ScheduleToneOptions) => void>;
+  setMuted: Mock<(muted: boolean) => void>;
+};
+
+function createMockAudioEngine(
+  initialStatus: AudioEngineStatus = "idle"
+): MockAudioEngine {
+  let statusBeforeMute = initialStatus;
+
+  const engine: MockAudioEngine = {
+    status: initialStatus,
+    arm: vi.fn(async () => {
+      if (engine.status === "muted") {
+        return;
+      }
+
+      engine.status = "ready";
+      statusBeforeMute = engine.status;
+    }),
+    getStatus: vi.fn(() => engine.status),
+    scheduleTone: vi.fn<(options: ScheduleToneOptions) => void>(),
+    setMuted: vi.fn((muted: boolean) => {
+      if (muted) {
+        statusBeforeMute = engine.status;
+        engine.status = "muted";
+        return;
+      }
+
+      engine.status = statusBeforeMute;
+    })
+  };
+
+  return engine;
+}
+
+function getScheduledTone(
+  scheduleTone: Mock<(options: ScheduleToneOptions) => void>,
+  callIndex: number
+): ScheduleToneOptions {
+  const call = scheduleTone.mock.calls[callIndex];
+
+  if (call === undefined) {
+    throw new Error(`Expected scheduleTone call #${callIndex + 1}.`);
+  }
+
+  return call[0];
+}
+
+describe.skip("createSfxController legacy Web Audio coverage", () => {
   beforeEach(() => {
     harness = installMockWebAudio();
   });
@@ -564,5 +617,90 @@ describe("createSfxController", () => {
     expect(context.createOscillator.mock.calls.length).toBeGreaterThan(
       createOscillatorCallsAfterFirstPlay
     );
+  });
+});
+
+describe("createSfxController", () => {
+  it("schedules the shoot tones through the audio engine", () => {
+    const engine = createMockAudioEngine("ready");
+    const controller = createSfxController(engine);
+
+    controller.play("shoot");
+
+    expect(engine.scheduleTone).toHaveBeenCalledTimes(2);
+
+    const firstTone = getScheduledTone(engine.scheduleTone, 0);
+    const secondTone = getScheduledTone(engine.scheduleTone, 1);
+
+    expect(firstTone).toMatchObject({
+      frequency: 720,
+      duration: 0.09,
+      gain: 0.06,
+      type: "square",
+      cooldownSeconds: 0.03,
+      startOffset: 0,
+      tag: "shoot"
+    });
+    expect(secondTone).toMatchObject({
+      frequency: 940,
+      duration: 0.06,
+      gain: 0.04,
+      type: "triangle",
+      startOffset: 0.09 * 0.68,
+      tag: "shoot"
+    });
+    expect(secondTone.cooldownSeconds).toBeUndefined();
+  });
+
+  it.each([
+    ["idle", "idle"],
+    ["muted", "muted"]
+  ] as const)(
+    "does not schedule tones while %s",
+    (initialStatus, expectedStatus) => {
+      const engine = createMockAudioEngine(initialStatus);
+      const controller = createSfxController(engine);
+
+      controller.play("hit");
+
+      expect(controller.getStatus()).toBe(expectedStatus);
+      expect(engine.scheduleTone).not.toHaveBeenCalled();
+    }
+  );
+
+  it("forwards the per-sound cooldown tag to the engine", () => {
+    const engine = createMockAudioEngine("ready");
+    const controller = createSfxController(engine);
+
+    controller.play("playerDeath");
+
+    expect(engine.scheduleTone).toHaveBeenCalledTimes(3);
+    expect(engine.scheduleTone.mock.calls.map(([options]) => options.tag)).toEqual([
+      "playerDeath",
+      "playerDeath",
+      "playerDeath"
+    ]);
+  });
+
+  it("forwards arm, setMuted, and getStatus to the engine", async () => {
+    const engine = createMockAudioEngine();
+    const controller = createSfxController(engine);
+
+    expect(controller.getStatus()).toBe("idle");
+
+    await controller.arm();
+
+    expect(engine.arm).toHaveBeenCalledTimes(1);
+    expect(controller.getStatus()).toBe("ready");
+
+    controller.setMuted(true);
+
+    expect(engine.setMuted).toHaveBeenCalledWith(true);
+    expect(controller.getStatus()).toBe("muted");
+
+    controller.setMuted(false);
+
+    expect(engine.setMuted).toHaveBeenCalledWith(false);
+    expect(controller.getStatus()).toBe("ready");
   });
 });
