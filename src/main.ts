@@ -1,21 +1,16 @@
 import { deriveSfxEvents } from "./audio/events";
 import { createMuteStore } from "./audio/mute";
 import { createSfxController } from "./audio/sfx";
-import {
-  EMPTY_INPUT,
-  createInitialGameState,
-  type GameState,
-  type Input
-} from "./game/state";
-import { step } from "./game/step";
+import { createInitialGameState } from "./game/state";
 import { createKeyboardController } from "./input/keyboard";
 import { createFixedStepLoop } from "./loop/fixedStep";
-import { createHighScoreStore, pickDisplayHighScore } from "./persistence";
-import { createCanvasRenderer, type CanvasRenderer } from "./render/canvas";
+import { createHighScoreStore } from "./persistence";
+import { createCanvasRenderer, type RenderFlags } from "./render/canvas";
+import { createGameRuntime } from "./runtime";
+import { step } from "./game/step";
 import { createVisibilityPauseController } from "./visibility";
 
 const FIXED_TIMESTEP_MS = 1000 / 60;
-type RuntimeRenderFlags = Parameters<CanvasRenderer["render"]>[1];
 
 const canvas = document.querySelector<HTMLCanvasElement>("#game");
 
@@ -28,55 +23,67 @@ const keyboard = createKeyboardController(window);
 const sfx = createSfxController();
 const muteStore = createMuteStore();
 const highScoreStore = createHighScoreStore();
-
-let state = createInitialGameState();
 let bootstrapping = true;
-let audioAttempted = false;
-let frameInput: Input = keyboard.snapshot();
+let visibilityPauseRequested = false;
 
-sfx.setMuted(muteStore.isMuted());
-renderer.render(state, createRenderFlags(muteStore.isMuted()));
+const runtime = createGameRuntime({
+  deriveSfxEvents,
+  initialState: createInitialGameState(),
+  muteStore,
+  readHighScore: () => highScoreStore.getHighScore(),
+  readInput: () => {
+    const snapshot = keyboard.snapshot();
+
+    if (!visibilityPauseRequested) {
+      return snapshot;
+    }
+
+    return {
+      ...snapshot,
+      pausePressed: true
+    };
+  },
+  sfxController: sfx,
+  step,
+  writeHighScore: (score) => {
+    highScoreStore.recordScore(score);
+  }
+});
+
+render();
 bootstrapping = false;
-maybeArmAudio(state.phase, frameInput);
+
+const handleUserInput = (): void => {
+  runtime.onUserInput();
+};
+
+window.addEventListener("keydown", handleUserInput);
+window.addEventListener("pointerdown", handleUserInput);
 
 const visibilityPauseController = createVisibilityPauseController({
   target: document,
   isHidden: () => document.hidden,
   onHide: () => {
-    if (state.phase !== "playing") {
+    if (runtime.getState().phase !== "playing") {
       return;
     }
 
-    advanceState(0, {
-      ...EMPTY_INPUT,
-      pausePressed: true
-    });
+    visibilityPauseRequested = true;
   }
 });
 
 const loop = createFixedStepLoop({
   stepMs: FIXED_TIMESTEP_MS,
-  onStep: ({ dtMs, firstStepOfFrame }) => {
-    const stepInput = firstStepOfFrame
-      ? frameInput
-      : {
-          ...frameInput,
-          firePressed: false,
-          pausePressed: false,
-          mutePressed: false
-        };
-    advanceState(dtMs, stepInput);
-  },
+  onStep: runtime.onStep,
   onRender: () => {
-    frameInput = keyboard.snapshot();
+    runtime.onRender();
 
-    if (frameInput.mutePressed) {
-      muteStore.toggle();
-      sfx.setMuted(muteStore.isMuted());
+    if (visibilityPauseRequested) {
+      runtime.onStep({ dtMs: 0, firstStepOfFrame: true });
+      visibilityPauseRequested = false;
     }
 
-    maybeArmAudio(state.phase, frameInput);
-    renderer.render(state, createRenderFlags(muteStore.isMuted()));
+    render();
   }
 });
 
@@ -84,57 +91,21 @@ window.addEventListener("beforeunload", () => {
   loop.stop();
   keyboard.dispose();
   visibilityPauseController.dispose();
+  window.removeEventListener("keydown", handleUserInput);
+  window.removeEventListener("pointerdown", handleUserInput);
 });
 
 loop.start();
 
-function maybeArmAudio(phase: GameState["phase"], input: Input): void {
-  if (audioAttempted) {
-    return;
-  }
-
-  const leavesOverlay =
-    ((phase === "start" || phase === "waveClear" || phase === "gameOver") &&
-      input.firePressed) ||
-    (phase === "paused" && input.pausePressed);
-
-  if (!leavesOverlay) {
-    return;
-  }
-
-  audioAttempted = true;
-  void sfx.arm();
+function render(): void {
+  renderer.render(runtime.getState(), createRenderFlags());
 }
 
-function advanceState(dtMs: number, input: Input): void {
-  const previousState = state;
-  state = step(state, dtMs, input);
-  maybeRecordHighScore(state.hud.score);
-  playDerivedEvents(previousState, state);
-}
-
-function playDerivedEvents(previousState: GameState, nextState: GameState): void {
-  for (const event of deriveSfxEvents(previousState, nextState)) {
-    sfx.play(event);
-  }
-}
-
-function maybeRecordHighScore(score: number): void {
-  if (score <= highScoreStore.getHighScore()) {
-    return;
-  }
-
-  highScoreStore.recordScore(score);
-}
-
-function createRenderFlags(muted: boolean): RuntimeRenderFlags {
+function createRenderFlags(): RenderFlags {
   return {
     bootstrapping,
-    muted,
-    highScore: pickDisplayHighScore(
-      highScoreStore.getHighScore(),
-      state.hud.score
-    )
+    muted: runtime.isMuted(),
+    highScore: runtime.getDisplayHighScore()
   };
 }
 
