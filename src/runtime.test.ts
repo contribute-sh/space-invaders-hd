@@ -4,6 +4,14 @@ import { deriveSfxEvents } from "./audio/events";
 import type { SfxName } from "./audio/sfx";
 import {
   EMPTY_INPUT,
+  INVADER_PROJECTILE_HEIGHT,
+  INVADER_PROJECTILE_SPEED,
+  INVADER_PROJECTILE_WIDTH,
+  PROJECTILE_HEIGHT,
+  PROJECTILE_SPEED,
+  PROJECTILE_WIDTH,
+  SHIELD_CELL_COLS,
+  SHIELD_CELL_ROWS,
   createInitialGameState,
   createPlayerProjectile,
   createPlayingState,
@@ -12,7 +20,10 @@ import {
   type GameState,
   type Input
 } from "./game/state";
+import { step as stepWithEvents, type StepEvent, type StepResult } from "./game/step";
 import { createGameRuntime, type GameRuntime } from "./runtime";
+
+const SHIELD_HIT_DT_MS = 21;
 
 class FakeSfxController {
   public armCalls = 0;
@@ -76,6 +87,7 @@ type RuntimeHarness = {
   queueInput: (input?: Partial<Input>) => void;
   runtime: GameRuntime;
   sfxController: FakeSfxController;
+  stepEventCalls: StepEvent[][];
   stepCalls: Array<{ dtMs: number; input: Input }>;
   writeHighScoreCalls: number[];
   muteStore: FakeMuteStore;
@@ -89,13 +101,15 @@ type RuntimeHarnessOptions = {
   initialHighScore?: number;
   initialMuted?: boolean;
   initialState?: GameState;
-  step?: (state: GameState, dtMs: number, input: Input) => GameState;
+  onStepEvents?: (events: readonly StepEvent[]) => void;
+  step?: (state: GameState, dtMs: number, input: Input) => GameState | StepResult;
 };
 
 function createHarness(options: RuntimeHarnessOptions = {}): RuntimeHarness {
   const sfxController = new FakeSfxController();
   const muteStore = new FakeMuteStore(options.initialMuted);
   const highScoreWriter = new FakeHighScoreWriter(options.initialHighScore);
+  const stepEventCalls: StepEvent[][] = [];
   const stepCalls: Array<{ dtMs: number; input: Input }> = [];
   let queuedInput = createInput();
 
@@ -103,6 +117,11 @@ function createHarness(options: RuntimeHarnessOptions = {}): RuntimeHarness {
     deriveSfxEvents: options.deriveEvents ?? (() => []),
     initialState: options.initialState ?? createInitialGameState(),
     muteStore,
+    onStepEvents: (events) => {
+      const snapshot = [...events];
+      stepEventCalls.push(snapshot);
+      options.onStepEvents?.(snapshot);
+    },
     readHighScore: () => highScoreWriter.readHighScore(),
     readInput: () => {
       const snapshot = queuedInput;
@@ -124,6 +143,7 @@ function createHarness(options: RuntimeHarnessOptions = {}): RuntimeHarness {
     },
     runtime,
     sfxController,
+    stepEventCalls,
     stepCalls,
     writeHighScoreCalls: highScoreWriter.writeCalls,
     muteStore
@@ -148,6 +168,52 @@ function withPlayerProjectileCount(state: GameState, count: number): GameState {
       ),
       id: index + 1
     }))
+  };
+}
+
+function getShieldCell(state: GameState, shieldIndex: number, row: number, col: number) {
+  const cell = state.shields[shieldIndex]?.cells[row * SHIELD_CELL_COLS + col];
+  if (cell === undefined) {
+    throw new Error(`Missing shield cell ${shieldIndex}:${row},${col}`);
+  }
+
+  return cell;
+}
+
+function createShieldProjectile(
+  state: GameState,
+  row: number,
+  col: number,
+  id: number,
+  velocityY: number
+) {
+  const cell = getShieldCell(state, 0, row, col);
+
+  return {
+    id,
+    owner: "player" as const,
+    x: cell.x + (cell.width - PROJECTILE_WIDTH) / 2,
+    y: velocityY < 0 ? cell.y + cell.height + 4 : cell.y - PROJECTILE_HEIGHT - 4,
+    width: PROJECTILE_WIDTH,
+    height: PROJECTILE_HEIGHT,
+    velocityY,
+    active: true
+  };
+}
+
+function createInvaderTestProjectile(
+  state: GameState,
+  y = state.player.y - INVADER_PROJECTILE_HEIGHT
+) {
+  return {
+    id: 1,
+    owner: "invader" as const,
+    x: state.player.x + (state.player.width - INVADER_PROJECTILE_WIDTH) / 2,
+    y,
+    width: INVADER_PROJECTILE_WIDTH,
+    height: INVADER_PROJECTILE_HEIGHT,
+    velocityY: INVADER_PROJECTILE_SPEED,
+    active: true
   };
 }
 
@@ -299,5 +365,111 @@ describe("createGameRuntime", () => {
       false
     ]);
     expect(harness.sfxController.playCalls).toEqual(["shoot", "hit"]);
+  });
+
+  it("forwards step events in tick order and clears them between ticks", () => {
+    const playerShotState = createPlayingState();
+    const shieldHitState = createPlayingState();
+    const shieldHitRow = SHIELD_CELL_ROWS - 1;
+    const shieldHitCol = 2;
+    const shieldHitSource = {
+      ...shieldHitState,
+      projectiles: [
+        createShieldProjectile(
+          shieldHitState,
+          shieldHitRow,
+          shieldHitCol,
+          1,
+          PROJECTILE_SPEED
+        )
+      ],
+      nextProjectileId: 2
+    };
+    const waveClearBase = createPlayingState();
+    const waveClearInvader = waveClearBase.invaders[0];
+    if (waveClearInvader === undefined) {
+      throw new Error("Missing invader for wave-clear test.");
+    }
+    const waveClearSource = {
+      ...waveClearBase,
+      invaders: [waveClearInvader],
+      projectiles: [
+        {
+          id: 1,
+          owner: "player" as const,
+          x: waveClearInvader.x,
+          y: waveClearInvader.y,
+          width: waveClearInvader.width,
+          height: waveClearInvader.height,
+          velocityY: 0,
+          active: true
+        }
+      ],
+      nextProjectileId: 2,
+      invaderFireCooldownMs: 0
+    };
+    const lifeLostBase = createPlayingState();
+    const lifeLostSource = {
+      ...lifeLostBase,
+      projectiles: [createInvaderTestProjectile(lifeLostBase)],
+      invaderFireCooldownMs: 0
+    };
+    const scriptedStates = [
+      playerShotState,
+      shieldHitSource,
+      waveClearSource,
+      lifeLostSource,
+      createPlayingState()
+    ] satisfies GameState[];
+    let stepIndex = 0;
+    const harness = createHarness({
+      step: (_state, dtMs, input) => {
+        const sourceState = scriptedStates[stepIndex];
+        if (sourceState === undefined) {
+          throw new Error(`Unexpected step index ${stepIndex}.`);
+        }
+
+        stepIndex += 1;
+        return stepWithEvents(sourceState, dtMs, input);
+      }
+    });
+
+    harness.queueInput({ firePressed: true });
+    harness.runtime.onRender();
+    harness.runtime.onStep({ dtMs: 16, firstStepOfFrame: true });
+
+    harness.runtime.onRender();
+    harness.runtime.onStep({ dtMs: SHIELD_HIT_DT_MS, firstStepOfFrame: true });
+
+    harness.runtime.onRender();
+    harness.runtime.onStep({ dtMs: 0, firstStepOfFrame: true });
+
+    harness.runtime.onRender();
+    harness.runtime.onStep({ dtMs: 16, firstStepOfFrame: true });
+
+    harness.runtime.onRender();
+    harness.runtime.onStep({ dtMs: 16, firstStepOfFrame: true });
+
+    expect(harness.stepEventCalls).toEqual([
+      [{ type: "playerShot" }],
+      [
+        {
+          type: "shieldHit",
+          shieldIndex: 0,
+          row: shieldHitRow,
+          col: shieldHitCol
+        }
+      ],
+      [
+        {
+          type: "invaderHit",
+          invaderId: waveClearInvader.id,
+          points: waveClearInvader.points
+        },
+        { type: "waveClear" }
+      ],
+      [{ type: "lifeLost" }],
+      []
+    ]);
   });
 });
