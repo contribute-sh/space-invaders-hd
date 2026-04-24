@@ -124,25 +124,35 @@ describe("createKeyboardController", () => {
     expect(snapshot.fireHeld).toBe(false);
   });
 
-  it("clears fire, pause, and mute edges on blur before snapshot", () => {
+  it("clears an unconsumed fire edge on blur before snapshot", () => {
     const target = createTarget();
     const controller = createKeyboardController(target);
 
     dispatchKeyDown(target, "Space");
     dispatchBlur(target);
 
-    const fireSnapshot = controller.snapshot();
+    const snapshot = controller.snapshot();
 
-    expect(fireSnapshot.firePressed).toBe(false);
-    expect(fireSnapshot.fireHeld).toBe(false);
+    expect(snapshot.firePressed).toBe(false);
+    expect(snapshot.fireHeld).toBe(false);
+  });
+
+  it("clears an unconsumed pause edge on blur before snapshot", () => {
+    const target = createTarget();
+    const controller = createKeyboardController(target);
 
     dispatchKeyDown(target, "KeyP");
     dispatchBlur(target);
 
-    const pauseSnapshot = controller.snapshot();
+    const snapshot = controller.snapshot();
 
-    expect(pauseSnapshot.pausePressed).toBe(false);
-    expect(pauseSnapshot.pauseHeld).toBe(false);
+    expect(snapshot.pausePressed).toBe(false);
+    expect(snapshot.pauseHeld).toBe(false);
+  });
+
+  it("clears an unconsumed mute edge on blur before snapshot", () => {
+    const target = createTarget();
+    const controller = createKeyboardController(target);
 
     dispatchKeyDown(target, "KeyM");
     dispatchBlur(target);
