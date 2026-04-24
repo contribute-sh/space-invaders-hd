@@ -6,6 +6,7 @@ import {
   MARCH_FRAME_INTERVAL_MS,
   PLAYER_SHOOT_COOLDOWN_MS,
   RESPAWN_INVULNERABILITY_MS,
+  SHIELD_CELL_COLS,
   createInvaderProjectile,
   createGameState,
   createPlayerProjectile,
@@ -28,42 +29,72 @@ type Rect = {
   height: number;
 };
 
+export type StepEvent =
+  | { type: "playerShot"; projectileId: number }
+  | { type: "invaderHit"; invaderId: number; points: number }
+  | { type: "shieldHit"; shieldId: number; cellId: number; row: number; col: number }
+  | { type: "lifeLost" }
+  | { type: "waveClear" };
+
+export type StepResult = GameState & { state: GameState; events: StepEvent[] };
+
 const PLAYER_SHOOT_FRAME_DURATION_MS = 120;
 
-export function step(state: GameState, dtMs: number, input: Input = EMPTY_INPUT): GameState {
+export function step(
+  state: GameState,
+  dtMs: number,
+  input: Input = EMPTY_INPUT
+): StepResult {
   const dt = Math.max(0, dtMs);
+  const events: StepEvent[] = [];
 
   switch (state.phase) {
     case "start":
-      return input.firePressed
-        ? createGameState({ phase: "playing" })
-        : advanceFrame(state);
+      return toStepResult(
+        input.firePressed
+          ? createGameState({ phase: "playing" })
+          : advanceFrame(state),
+        events
+      );
     case "waveClear":
-      return input.firePressed
-        ? createGameState({
-            phase: "playing",
-            wave: state.hud.wave + 1,
-            score: state.hud.score,
-            lives: state.hud.lives,
-            elapsedMs: state.elapsedMs
-          })
-        : advanceFrame(state);
+      return toStepResult(
+        input.firePressed
+          ? createGameState({
+              phase: "playing",
+              wave: state.hud.wave + 1,
+              score: state.hud.score,
+              lives: state.hud.lives,
+              elapsedMs: state.elapsedMs
+            })
+          : advanceFrame(state),
+        events
+      );
     case "gameOver":
-      return input.firePressed
-        ? createGameState({ phase: "playing" })
-        : advanceFrame(state);
+      return toStepResult(
+        input.firePressed
+          ? createGameState({ phase: "playing" })
+          : advanceFrame(state),
+        events
+      );
     case "paused":
-      return input.pausePressed
-        ? {
-            ...state,
-            phase: "playing"
-          }
-        : state;
+      return toStepResult(
+        input.pausePressed
+          ? {
+              ...state,
+              phase: "playing"
+            }
+          : state,
+        events
+      );
     case "lifeLost":
-      return advanceLifeLost(state, dt);
+      return toStepResult(advanceLifeLost(state, dt, events), events);
     case "playing":
-      return advancePlaying(state, dt, input);
+      return toStepResult(advancePlaying(state, dt, input, events), events);
   }
+}
+
+function toStepResult(state: GameState, events: StepEvent[] = []): StepResult {
+  return { ...state, state, events };
 }
 
 function advanceFrame(state: GameState): GameState {
@@ -73,13 +104,18 @@ function advanceFrame(state: GameState): GameState {
   };
 }
 
-function advanceLifeLost(state: GameState, dtMs: number): GameState {
+function advanceLifeLost(
+  state: GameState,
+  dtMs: number,
+  events: StepEvent[]
+): GameState {
   const simulatedDtMs = Math.min(dtMs, state.transitionTimerMs);
   const projectileShieldBundle = moveProjectilesThroughShields(
     state.projectiles,
     simulatedDtMs / 1000,
     state.arena.floorY,
-    state.shields
+    state.shields,
+    events
   );
   const invaderFireCooldownMs = Math.max(
     0,
@@ -140,7 +176,12 @@ function advanceLifeLost(state: GameState, dtMs: number): GameState {
   };
 }
 
-function advancePlaying(state: GameState, dtMs: number, input: Input): GameState {
+function advancePlaying(
+  state: GameState,
+  dtMs: number,
+  input: Input,
+  events: StepEvent[]
+): GameState {
   if (input.pausePressed) {
     return {
       ...state,
@@ -172,19 +213,22 @@ function advancePlaying(state: GameState, dtMs: number, input: Input): GameState
     movedPlayer,
     input.firePressed,
     playerShootFrame,
-    invaderFireCooldownMs
+    invaderFireCooldownMs,
+    events
   );
   const projectileShieldBundle = moveProjectilesThroughShields(
     projectileBundle.projectiles,
     dtSeconds,
     state.arena.floorY,
-    state.shields
+    state.shields,
+    events
   );
   const formationBundle = moveInvaders(state, dtSeconds);
   const marchAnimation = advanceMarchAnimation(state, dtMs);
   const collisionBundle = resolveProjectileHits(
     projectileShieldBundle.projectiles,
-    formationBundle.invaders
+    formationBundle.invaders,
+    events
   );
   const score = state.hud.score + collisionBundle.scoreDelta;
   const playerIsInvulnerable =
@@ -207,6 +251,7 @@ function advancePlaying(state: GameState, dtMs: number, input: Input): GameState
     (playerHitProjectile !== undefined ||
       hasInvaderBreached(collisionBundle.invaders, movedPlayer))
   ) {
+    events.push({ type: "lifeLost" });
     return {
       ...state,
       phase: "lifeLost",
@@ -235,6 +280,7 @@ function advancePlaying(state: GameState, dtMs: number, input: Input): GameState
   }
 
   if (collisionBundle.invaders.length === 0) {
+    events.push({ type: "waveClear" });
     return {
       ...state,
       phase: "waveClear",
@@ -291,7 +337,8 @@ function maybeSpawnProjectiles(
   player: GameState["player"],
   firePressed: boolean,
   playerShootFrame: number,
-  invaderFireCooldownMs: number
+  invaderFireCooldownMs: number,
+  events: StepEvent[]
 ): {
   nextProjectileId: number;
   invaderFireCooldownMs: number;
@@ -320,6 +367,10 @@ function maybeSpawnProjectiles(
     nextProjectileId += 1;
     nextPlayerShootCooldownMs = PLAYER_SHOOT_COOLDOWN_MS;
     nextPlayerShootFrame = PLAYER_SHOOT_FRAME_DURATION_MS;
+    events.push({
+      type: "playerShot",
+      projectileId: playerProjectile.id
+    });
   }
 
   if (nextInvaderFireCooldownMs <= 0) {
@@ -361,7 +412,8 @@ function moveProjectilesThroughShields(
   projectiles: Projectile[],
   dtSeconds: number,
   arenaFloorY: number,
-  shields: Shield[]
+  shields: Shield[],
+  events: StepEvent[]
 ): {
   projectiles: Projectile[];
   shields: Shield[];
@@ -392,6 +444,13 @@ function moveProjectilesThroughShields(
               )
             }
       );
+      events.push({
+        type: "shieldHit",
+        shieldId: collision.shieldId,
+        cellId: collision.cellId,
+        row: collision.row,
+        col: collision.col
+      });
       continue;
     }
 
@@ -502,7 +561,8 @@ function getMarchFrameIntervalMs(
 
 function resolveProjectileHits(
   projectiles: Projectile[],
-  invaders: Invader[]
+  invaders: Invader[],
+  events: StepEvent[]
 ): {
   invaders: Invader[];
   projectiles: Projectile[];
@@ -524,6 +584,11 @@ function resolveProjectileHits(
       if (intersects(invader, projectile)) {
         consumedProjectileIds.add(projectile.id);
         scoreDelta += invader.points;
+        events.push({
+          type: "invaderHit",
+          invaderId: invader.id,
+          points: invader.points
+        });
         hit = true;
         break;
       }
@@ -550,6 +615,8 @@ function findShieldCollision(
   | {
       shieldId: number;
       cellId: number;
+      row: number;
+      col: number;
     }
   | undefined {
   const path = getProjectilePath(projectile, movedProjectile);
@@ -558,17 +625,21 @@ function findShieldCollision(
     | {
         shieldId: number;
         cellId: number;
+        row: number;
+        col: number;
         edge: number;
       }
     | undefined;
 
   for (const shield of shields) {
-    for (const cell of shield.cells) {
+    for (const [cellIndex, cell] of shield.cells.entries()) {
       if (!cell.alive || !intersects(cell, path)) {
         continue;
       }
 
       const edge = movingDown ? cell.y : cell.y + cell.height;
+      const row = Math.floor(cellIndex / SHIELD_CELL_COLS);
+      const col = cellIndex % SHIELD_CELL_COLS;
       if (
         collision === undefined ||
         (movingDown ? edge < collision.edge : edge > collision.edge) ||
@@ -577,6 +648,8 @@ function findShieldCollision(
         collision = {
           shieldId: shield.id,
           cellId: cell.id,
+          row,
+          col,
           edge
         };
       }
@@ -585,7 +658,12 @@ function findShieldCollision(
 
   return collision === undefined
     ? undefined
-    : { shieldId: collision.shieldId, cellId: collision.cellId };
+    : {
+        shieldId: collision.shieldId,
+        cellId: collision.cellId,
+        row: collision.row,
+        col: collision.col
+      };
 }
 
 function getProjectilePath(
