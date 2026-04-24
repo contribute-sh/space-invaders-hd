@@ -8,6 +8,7 @@ import {
   type Mock
 } from "vitest";
 
+import type { AudioEngine, AudioEngineStatus, ScheduleToneOptions } from "./engine";
 import { createSfxController, type SfxName } from "./sfx";
 
 type MockDestination = {
@@ -69,6 +70,14 @@ type MockWebAudioHarness = {
   readonly gainConstructor: Mock<() => MockGainNode>;
 };
 
+type MockAudioEngine = {
+  arm: Mock<() => Promise<void>>;
+  getStatus: Mock<() => AudioEngineStatus>;
+  now: Mock<() => number>;
+  scheduleTone: Mock<(options: ScheduleToneOptions) => void>;
+  setMuted: Mock<(muted: boolean) => void>;
+} & AudioEngine;
+
 type MockOscillatorConstructor = new () => MockOscillatorNode;
 type MockGainConstructor = new () => MockGainNode;
 
@@ -81,6 +90,45 @@ const SFX_NAMES = [
 const AFTER_SFX_COOLDOWN_SECONDS = 0.031;
 
 let harness: MockWebAudioHarness;
+
+function createMockAudioEngine(
+  initialStatus: AudioEngineStatus = "ready"
+): MockAudioEngine {
+  let status = initialStatus;
+
+  return {
+    arm: vi.fn(async () => {
+      if (status !== "muted") {
+        status = "ready";
+      }
+    }),
+    getStatus: vi.fn(() => status),
+    now: vi.fn(() => 0),
+    scheduleTone: vi.fn<(options: ScheduleToneOptions) => void>(),
+    setMuted: vi.fn((muted) => {
+      status = muted ? "muted" : "ready";
+    })
+  };
+}
+
+function getScheduledToneCall(
+  engine: MockAudioEngine,
+  index: number
+): ScheduleToneOptions {
+  const call = engine.scheduleTone.mock.calls[index];
+
+  if (call === undefined) {
+    throw new Error(`Expected scheduleTone call ${index}.`);
+  }
+
+  const [options] = call;
+
+  if (options === undefined) {
+    throw new Error(`Expected scheduleTone options for call ${index}.`);
+  }
+
+  return options;
+}
 
 function createMockAudioParam(initialValue: number): MockAudioParam {
   const audioParam: MockAudioParam = {
@@ -348,10 +396,26 @@ describe("createSfxController", () => {
     vi.unstubAllGlobals();
   });
 
-  it("returns idle before arming", () => {
-    const controller = createSfxController();
+  it("forwards arm, getStatus, and setMuted to the engine", async () => {
+    const engine = createMockAudioEngine("idle");
+    const controller = createSfxController(engine);
 
     expect(controller.getStatus()).toBe("idle");
+
+    await controller.arm();
+
+    expect(engine.arm).toHaveBeenCalledTimes(1);
+    expect(controller.getStatus()).toBe("ready");
+
+    controller.setMuted(true);
+
+    expect(engine.setMuted).toHaveBeenCalledWith(true);
+    expect(controller.getStatus()).toBe("muted");
+
+    controller.setMuted(false);
+
+    expect(engine.setMuted).toHaveBeenLastCalledWith(false);
+    expect(controller.getStatus()).toBe("ready");
   });
 
   it("arms the controller, resumes a suspended context, and becomes ready", async () => {
@@ -368,40 +432,48 @@ describe("createSfxController", () => {
     expect(controller.getStatus()).toBe("ready");
   });
 
-  it("reports unavailable when AudioContext construction fails and play becomes a no-op", async () => {
-    harness.throwOnAudioContextConstruction = true;
+  it("schedules the expected shoot tones through the engine", () => {
+    const engine = createMockAudioEngine();
+    const controller = createSfxController(engine);
 
-    const controller = createSfxController();
-
-    await controller.arm();
-    controller.play("shoot");
-    controller.setMuted(true);
-
-    expect(harness.audioContextConstructor).toHaveBeenCalledTimes(1);
-    expect(controller.getStatus()).toBe("unavailable");
-    expect(harness.oscillators).toHaveLength(0);
-    expect(harness.gains).toHaveLength(0);
-  });
-
-  it("reports unavailable when AudioContext.resume fails and only recovers through a fresh context", async () => {
-    harness.throwOnResume = true;
-
-    const controller = createSfxController();
-
-    await controller.arm();
     controller.play("shoot");
 
-    expect(harness.audioContextConstructor).toHaveBeenCalledTimes(1);
-    expect(controller.getStatus()).toBe("unavailable");
-    expect(harness.oscillators).toHaveLength(0);
-    expect(harness.gains).toHaveLength(0);
+    expect(engine.scheduleTone).toHaveBeenCalledTimes(2);
 
-    harness.throwOnResume = false;
-    await controller.arm();
+    const firstTone = getScheduledToneCall(engine, 0);
+    const secondTone = getScheduledToneCall(engine, 1);
 
-    expect(harness.audioContextConstructor).toHaveBeenCalledTimes(2);
-    expect(controller.getStatus()).toBe("ready");
+    expect(firstTone).toMatchObject({
+      frequency: 720,
+      duration: 0.09,
+      gain: 0.06,
+      type: "square",
+      cooldownSeconds: 0.03,
+      tag: "shoot"
+    });
+    expect(firstTone.startOffset).toBe(0);
+
+    expect(secondTone).toMatchObject({
+      frequency: 940,
+      duration: 0.06,
+      gain: 0.04,
+      type: "triangle",
+      tag: "shoot"
+    });
+    expect(secondTone.startOffset).toBeCloseTo(0.0612);
   });
+
+  it.each(["idle", "muted"] as const)(
+    "does not call scheduleTone while %s",
+    (status) => {
+      const engine = createMockAudioEngine(status);
+      const controller = createSfxController(engine);
+
+      controller.play("shoot");
+
+      expect(engine.scheduleTone).not.toHaveBeenCalled();
+    }
+  );
 
   it("reports muted while the user mute preference is enabled, even after arming", async () => {
     const controller = createSfxController();
@@ -529,17 +601,17 @@ describe("createSfxController", () => {
     });
   });
 
-  it("tracks cooldowns independently for each SFX name", async () => {
-    const controller = createSfxController();
-    await controller.arm();
-    const context = getLastContext(harness);
+  it("forwards each SFX name as the cooldown tag", () => {
+    const engine = createMockAudioEngine();
+    const controller = createSfxController(engine);
 
-    context.currentTime = 1;
-    const hitPlayback = capturePlayback(harness, controller, "hit");
-    const shootPlayback = capturePlayback(harness, controller, "shoot");
+    controller.play("hit");
+    controller.play("shoot");
 
-    expect(hitPlayback.oscillators.length).toBeGreaterThan(0);
-    expect(shootPlayback.oscillators.length).toBeGreaterThan(0);
+    expect(getScheduledToneCall(engine, 0).tag).toBe("hit");
+    expect(getScheduledToneCall(engine, 1).tag).toBe("hit");
+    expect(getScheduledToneCall(engine, 2).tag).toBe("shoot");
+    expect(getScheduledToneCall(engine, 3).tag).toBe("shoot");
   });
 
   it("anchors the cooldown to AudioContext.currentTime", async () => {
