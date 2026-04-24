@@ -1,3 +1,9 @@
+import {
+  INVADER_ROW_DESCRIPTORS,
+  PLAYER_SHIP_DESCRIPTOR,
+  SPRITE_DESCRIPTOR_REGISTRY
+} from "./sprite-data";
+
 export type SpriteFrame = readonly string[];
 
 export type SpriteDescriptor = {
@@ -31,134 +37,12 @@ export type PreparedSprite = {
 
 export const EMPTY_PIXEL = ".";
 
-const PLAYER_SHIP_FRAMES: readonly SpriteFrame[] = [
-  [
-    ".........c.........",
-    "........ccc........",
-    ".......ccccc.......",
-    "......cccbccc......",
-    ".....ccbbbbbcc.....",
-    "...ccbbbbbbbbbcc...",
-    "..ccbbbbbbbbbbbcc.."
-  ]
-];
-
-const INVADER_SQUID_FRAMES: readonly SpriteFrame[] = [
-  [
-    "..xx....xx..",
-    "...xxxxxx...",
-    "..xxxxxxxx..",
-    ".xx.xxxx.xx.",
-    ".xxxxxxxxxx.",
-    "...xx..xx...",
-    "..xx....xx..",
-    ".xx......xx."
-  ],
-  [
-    "..xx....xx..",
-    "...xxxxxx...",
-    "..xxxxxxxx..",
-    ".xx.xxxx.xx.",
-    ".xxxxxxxxxx.",
-    "..xx.xx.xx..",
-    ".xx......xx.",
-    "xx........xx"
-  ]
-];
-
-const INVADER_CRAB_FRAMES: readonly SpriteFrame[] = [
-  [
-    "...xx..xx...",
-    "..xxxxxxxx..",
-    ".xxxxxxxxxx.",
-    "xx..xxxx..xx",
-    "xxxxxxxxxxxx",
-    "..xx.xx.xx..",
-    ".xx..xx..xx.",
-    "xx........xx"
-  ],
-  [
-    "...xx..xx...",
-    "..xxxxxxxx..",
-    ".xxxxxxxxxx.",
-    "xx..xxxx..xx",
-    "xxxxxxxxxxxx",
-    "...xx..xx...",
-    "..xx.xx.xx..",
-    ".xx......xx."
-  ]
-];
-
-const INVADER_BOMBER_FRAMES: readonly SpriteFrame[] = [
-  [
-    "...xxxxxx...",
-    "..xxxxxxxx..",
-    ".xxxxxxxxxx.",
-    "xxxx.xx.xxxx",
-    "xxxxxxxxxxxx",
-    "..xx.xx.xx..",
-    ".xx......xx.",
-    "xx........xx"
-  ],
-  [
-    "...xxxxxx...",
-    "..xxxxxxxx..",
-    ".xxxxxxxxxx.",
-    "xxxx.xx.xxxx",
-    "xxxxxxxxxxxx",
-    ".xx..xx..xx.",
-    "xx..xx..xx..",
-    "..xx....xx.."
-  ]
-];
-
-function createInvaderDescriptor(
-  id: string,
-  color: string,
-  frames: readonly SpriteFrame[]
-): SpriteDescriptor {
-  return {
-    id,
-    frames,
-    palette: {
-      x: color
-    },
-    pixelSize: 4
-  };
-}
-
-export const PLAYER_SHIP_DESCRIPTOR = {
-  id: "player-ship",
-  frames: PLAYER_SHIP_FRAMES,
-  palette: {
-    c: "#d7f4ff",
-    b: "#59d8ff"
-  },
-  pixelSize: 4
-} satisfies SpriteDescriptor;
-
-export const INVADER_ROW_DESCRIPTORS = [
-  createInvaderDescriptor("invader-row-0", "#8bf3ff", INVADER_SQUID_FRAMES),
-  createInvaderDescriptor("invader-row-1", "#7ad7ff", INVADER_CRAB_FRAMES),
-  createInvaderDescriptor("invader-row-2", "#5fbbff", INVADER_CRAB_FRAMES),
-  createInvaderDescriptor("invader-row-3", "#62f4c3", INVADER_BOMBER_FRAMES),
-  createInvaderDescriptor("invader-row-4", "#ffe37a", INVADER_BOMBER_FRAMES)
-] as const satisfies readonly SpriteDescriptor[];
-
-export const PLAYER_PROJECTILE_DESCRIPTOR = {
-  id: "player-projectile",
-  frames: [["p.", "pp", "pp", "pp", "pp", ".p"]],
-  palette: {
-    p: "#f7fbff"
-  },
-  pixelSize: 3
-} satisfies SpriteDescriptor;
-
-export const SPRITE_DESCRIPTORS = [
+export {
+  INVADER_ROW_DESCRIPTORS,
+  PLAYER_PROJECTILE_DESCRIPTOR,
   PLAYER_SHIP_DESCRIPTOR,
-  ...INVADER_ROW_DESCRIPTORS,
-  PLAYER_PROJECTILE_DESCRIPTOR
-] as const satisfies readonly SpriteDescriptor[];
+  SPRITE_DESCRIPTORS
+} from "./sprite-data";
 
 const HUD_PLAYER_SHIP_DESCRIPTOR = {
   ...PLAYER_SHIP_DESCRIPTOR,
@@ -166,18 +50,21 @@ const HUD_PLAYER_SHIP_DESCRIPTOR = {
   pixelSize: 2
 } satisfies SpriteDescriptor;
 
-const INVADER_ROW_SPRITES = {
-  "invader-row-0": prepareSprite(INVADER_ROW_DESCRIPTORS[0]),
-  "invader-row-1": prepareSprite(INVADER_ROW_DESCRIPTORS[1]),
-  "invader-row-2": prepareSprite(INVADER_ROW_DESCRIPTORS[2]),
-  "invader-row-3": prepareSprite(INVADER_ROW_DESCRIPTORS[3]),
-  "invader-row-4": prepareSprite(INVADER_ROW_DESCRIPTORS[4])
-} satisfies Record<(typeof INVADER_ROW_DESCRIPTORS)[number]["id"], PreparedSprite>;
+const INVADER_ROW_SPRITES = Object.fromEntries(
+  INVADER_ROW_DESCRIPTORS.map((descriptor) => [
+    descriptor.id,
+    prepareSprite(descriptor)
+  ] as const)
+) as Readonly<
+  Record<(typeof INVADER_ROW_DESCRIPTORS)[number]["id"], PreparedSprite>
+>;
 
 const SPRITE_REGISTRY = {
-  "player-ship": prepareSprite(PLAYER_SHIP_DESCRIPTOR),
+  "player-ship": prepareSprite(SPRITE_DESCRIPTOR_REGISTRY["player-ship"]!),
   "hud-player-ship": prepareSprite(HUD_PLAYER_SHIP_DESCRIPTOR),
-  "player-projectile": prepareSprite(PLAYER_PROJECTILE_DESCRIPTOR),
+  "player-projectile": prepareSprite(
+    SPRITE_DESCRIPTOR_REGISTRY["player-projectile"]!
+  ),
   ...INVADER_ROW_SPRITES
 } satisfies Record<string, PreparedSprite>;
 
