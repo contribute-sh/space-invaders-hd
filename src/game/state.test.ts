@@ -7,6 +7,7 @@ import {
   INVADER_PROJECTILE_WIDTH,
   assignInput,
   cloneInput,
+  createGameState,
   createInvaderProjectile,
   createPauseInput,
   createPlayingState,
@@ -16,9 +17,16 @@ import {
   type Invader,
   type Input
 } from "./state";
+import { step } from "./step";
 
 function getInputKeys(): Array<keyof Input> {
   return Object.keys(EMPTY_INPUT) as Array<keyof Input>;
+}
+
+function expectInputFields(actual: Input, expected: Input): void {
+  for (const key of getInputKeys()) {
+    expect(actual[key]).toBe(expected[key]);
+  }
 }
 
 describe("getFormationSpeed", () => {
@@ -115,20 +123,84 @@ describe("getFormationSpeed", () => {
   });
 });
 
-describe("input helpers", () => {
-  it("round-trips every EMPTY_INPUT field through cloneInput", () => {
-    const clonedInput = cloneInput(EMPTY_INPUT);
-
-    expect(clonedInput).toEqual(EMPTY_INPUT);
+describe("EMPTY_INPUT", () => {
+  it("uses neutral defaults for every field", () => {
+    expect(EMPTY_INPUT.moveX).toBe(0);
 
     for (const key of getInputKeys()) {
-      expect(clonedInput[key]).toEqual(EMPTY_INPUT[key]);
+      expect(EMPTY_INPUT[key]).toBe(key === "moveX" ? 0 : false);
     }
   });
+});
 
-  it("copies every Input field through assignInput", () => {
-    const target = cloneInput(EMPTY_INPUT);
+describe("cloneInput", () => {
+  it("copies every field into a distinct object without aliasing later mutations", () => {
+    const original: Input = {
+      moveX: -1,
+      firePressed: true,
+      pausePressed: true,
+      fireHeld: true,
+      pauseHeld: true,
+      mutePressed: true
+    };
+    const originalSnapshot: Input = { ...original };
+    const clonedInput = cloneInput(original);
+
+    expect(clonedInput).toEqual(original);
+    expect(clonedInput).not.toBe(original);
+    expectInputFields(clonedInput, original);
+
+    for (const key of getInputKeys()) {
+      if (key === "moveX") {
+        clonedInput[key] = 0;
+      } else {
+        clonedInput[key] = false;
+      }
+    }
+
+    expectInputFields(original, originalSnapshot);
+  });
+});
+
+describe("assignInput", () => {
+  it("copies every field into the existing target without aliasing later source mutations", () => {
+    const target: Input = {
+      moveX: -1,
+      firePressed: false,
+      pausePressed: true,
+      fireHeld: false,
+      pauseHeld: true,
+      mutePressed: false
+    };
     const source: Input = {
+      moveX: 1,
+      firePressed: true,
+      pausePressed: false,
+      fireHeld: true,
+      pauseHeld: false,
+      mutePressed: true
+    };
+    const targetReference = target;
+    const sourceSnapshot: Input = { ...source };
+
+    assignInput(target, source);
+
+    expect(target).toBe(targetReference);
+    expectInputFields(target, sourceSnapshot);
+
+    for (const key of getInputKeys()) {
+      if (key === "moveX") {
+        source[key] = 0;
+      } else {
+        source[key] = !source[key];
+      }
+    }
+
+    expectInputFields(target, sourceSnapshot);
+  });
+
+  it("clears a populated target when assigning EMPTY_INPUT", () => {
+    const target: Input = {
       moveX: 1,
       firePressed: true,
       pausePressed: true,
@@ -137,18 +209,17 @@ describe("input helpers", () => {
       mutePressed: true
     };
 
-    assignInput(target, source);
+    assignInput(target, EMPTY_INPUT);
 
-    for (const key of getInputKeys()) {
-      expect(target[key]).toBe(source[key]);
-    }
+    expectInputFields(target, EMPTY_INPUT);
   });
+});
 
-  it("creates a pause-only input from EMPTY_INPUT defaults", () => {
+describe("createPauseInput", () => {
+  it("sets only pausePressed and is accepted by step while paused", () => {
     const pauseInput = createPauseInput();
 
     expect(pauseInput.pausePressed).toBe(true);
-
     for (const key of getInputKeys()) {
       if (key === "pausePressed") {
         continue;
@@ -156,6 +227,15 @@ describe("input helpers", () => {
 
       expect(pauseInput[key]).toBe(EMPTY_INPUT[key]);
     }
+
+    const pausedState = createGameState({ phase: "paused" });
+    const advancePausedState = () => step(pausedState, 16, pauseInput);
+
+    expect(advancePausedState).not.toThrow();
+
+    const next = advancePausedState();
+
+    expect(next.state).toEqual(expect.objectContaining({ phase: "playing" }));
   });
 });
 
