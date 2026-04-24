@@ -5,6 +5,11 @@ const PLAYER_SHIP_FRAMES = [
     ".........c.........", "........ccc........", ".......ccccc.......",
     "......cccbccc......", ".....ccbbbbbcc.....", "...ccbbbbbbbbbcc...",
     "..ccbbbbbbbbbbbcc.."
+  ],
+  [
+    "........cbc........", "........ccc........", ".......ccccc.......",
+    "......cccbccc......", ".....ccbbbbbcc.....", "...ccbbbbbbbbbcc...",
+    "..ccbbbbbbbbbbbcc.."
   ]
 ] as const;
 

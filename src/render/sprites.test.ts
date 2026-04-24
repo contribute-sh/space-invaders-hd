@@ -87,7 +87,10 @@ describe("createSpriteSheet", () => {
     expect(SPRITE_DESCRIPTORS).toHaveLength(9);
     expect(INVADER_ROW_DESCRIPTORS).toHaveLength(5);
 
-    expect(createSpriteSheet(PLAYER_SHIP_DESCRIPTOR).getFrameCount()).toBe(1);
+    expect(createSpriteSheet(PLAYER_SHIP_DESCRIPTOR).getFrameCount()).toBe(2);
+    expect(PLAYER_SHIP_DESCRIPTOR.frames[1]).not.toEqual(
+      PLAYER_SHIP_DESCRIPTOR.frames[0]
+    );
     expect(createSpriteSheet(SHIELD_CELL_DESCRIPTOR).getFrameCount()).toBe(1);
     expect(createSpriteSheet(PLAYER_PROJECTILE_DESCRIPTOR).getFrameCount()).toBe(1);
     expect(createSpriteSheet(INVADER_PROJECTILE_DESCRIPTOR).getFrameCount()).toBe(
