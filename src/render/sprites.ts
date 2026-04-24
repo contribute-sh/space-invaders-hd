@@ -38,9 +38,11 @@ export type PreparedSprite = {
 export const EMPTY_PIXEL = ".";
 
 export {
+  INVADER_PROJECTILE_DESCRIPTOR,
   INVADER_ROW_DESCRIPTORS,
   PLAYER_PROJECTILE_DESCRIPTOR,
   PLAYER_SHIP_DESCRIPTOR,
+  SHIELD_CELL_DESCRIPTOR,
   SPRITE_DESCRIPTORS
 } from "./sprite-data";
 
@@ -65,6 +67,10 @@ const SPRITE_REGISTRY = {
   "player-projectile": prepareSprite(
     SPRITE_DESCRIPTOR_REGISTRY["player-projectile"]!
   ),
+  "invader-projectile": prepareSprite(
+    SPRITE_DESCRIPTOR_REGISTRY["invader-projectile"]!
+  ),
+  "shield-cell": prepareSprite(SPRITE_DESCRIPTOR_REGISTRY["shield-cell"]!),
   ...INVADER_ROW_SPRITES
 } satisfies Record<string, PreparedSprite>;
 
