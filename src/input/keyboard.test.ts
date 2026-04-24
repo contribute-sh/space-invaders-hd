@@ -33,11 +33,30 @@ function dispatchKeyDown(target: Window, code: string): void {
   target.dispatchEvent(new KeyboardEvent("keydown", { code }));
 }
 
+function dispatchKeyUp(target: Window, code: string): void {
+  target.dispatchEvent(new KeyboardEvent("keyup", { code }));
+}
+
 function dispatchBlur(target: Window): void {
   target.dispatchEvent(new Event("blur"));
 }
 
 describe("createKeyboardController", () => {
+  const repeatGuardCases = [
+    {
+      code: "Space",
+      edgeField: "firePressed",
+      heldField: "fireHeld",
+      label: "fire"
+    },
+    {
+      code: "KeyP",
+      edgeField: "pausePressed",
+      heldField: "pauseHeld",
+      label: "pause"
+    }
+  ] as const;
+
   it("clears held ArrowLeft input on blur", () => {
     const target = createTarget();
     const controller = createKeyboardController(target);
@@ -128,6 +147,55 @@ describe("createKeyboardController", () => {
 
     expect(snapshot.firePressed).toBe(true);
     expect(snapshot.fireHeld).toBe(true);
+  });
+
+  for (const { code, edgeField, heldField, label } of repeatGuardCases) {
+    it(`does not re-emit the ${label} edge on auto-repeat keydown and re-arms after keyup`, () => {
+      const target = createTarget();
+      const controller = createKeyboardController(target);
+
+      dispatchKeyDown(target, code);
+
+      const firstSnapshot = controller.snapshot();
+
+      dispatchKeyDown(target, code);
+
+      const secondSnapshot = controller.snapshot();
+
+      dispatchKeyUp(target, code);
+      dispatchKeyDown(target, code);
+
+      const rearmedSnapshot = controller.snapshot();
+
+      expect(firstSnapshot[edgeField]).toBe(true);
+      expect(firstSnapshot[heldField]).toBe(true);
+      expect(secondSnapshot[edgeField]).toBe(false);
+      expect(secondSnapshot[heldField]).toBe(true);
+      expect(rearmedSnapshot[edgeField]).toBe(true);
+      expect(rearmedSnapshot[heldField]).toBe(true);
+    });
+  }
+
+  it("does not re-emit the mute edge on auto-repeat keydown and re-arms after keyup", () => {
+    const target = createTarget();
+    const controller = createKeyboardController(target);
+
+    dispatchKeyDown(target, "KeyM");
+
+    const firstSnapshot = controller.snapshot();
+
+    dispatchKeyDown(target, "KeyM");
+
+    const secondSnapshot = controller.snapshot();
+
+    dispatchKeyUp(target, "KeyM");
+    dispatchKeyDown(target, "KeyM");
+
+    const rearmedSnapshot = controller.snapshot();
+
+    expect(firstSnapshot.mutePressed).toBe(true);
+    expect(secondSnapshot.mutePressed).toBe(false);
+    expect(rearmedSnapshot.mutePressed).toBe(true);
   });
 
   it("removes the blur listener on dispose", () => {
