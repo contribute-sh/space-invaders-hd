@@ -4,6 +4,7 @@ import {
   LIFE_LOST_DURATION_MS,
   PLAYER_SHOOT_COOLDOWN_MS,
   RESPAWN_INVULNERABILITY_MS,
+  SHIELD_CELL_COLS,
   createInvaderProjectile,
   createGameState,
   createPlayerProjectile,
@@ -28,40 +29,83 @@ type Rect = {
 
 const PLAYER_SHOOT_FRAME_DURATION_MS = 120;
 
-export function step(state: GameState, dtMs: number, input: Input = EMPTY_INPUT): GameState {
-  const dt = Math.max(0, dtMs);
+export type StepEvent =
+  | { type: "playerShot"; projectileId: number }
+  | { type: "invaderHit"; invaderId: number; points: number }
+  | {
+      type: "shieldHit";
+      shieldId: number;
+      cellId: number;
+      row: number;
+      col: number;
+    }
+  | { type: "lifeLost"; livesRemaining: number }
+  | { type: "waveClear"; wave: number };
 
-  switch (state.phase) {
-    case "start":
-      return input.firePressed
-        ? createGameState({ phase: "playing" })
-        : advanceFrame(state);
-    case "waveClear":
-      return input.firePressed
-        ? createGameState({
-            phase: "playing",
-            wave: state.hud.wave + 1,
-            score: state.hud.score,
-            lives: state.hud.lives,
-            elapsedMs: state.elapsedMs
-          })
-        : advanceFrame(state);
-    case "gameOver":
-      return input.firePressed
-        ? createGameState({ phase: "playing" })
-        : advanceFrame(state);
-    case "paused":
-      return input.pausePressed
-        ? {
-            ...state,
-            phase: "playing"
-          }
-        : state;
-    case "lifeLost":
-      return advanceLifeLost(state, dt);
-    case "playing":
-      return advancePlaying(state, dt, input);
-  }
+export type StepResult = GameState & { readonly state: GameState; readonly events: StepEvent[] };
+
+export function step(
+  state: GameState,
+  dtMs: number,
+  input: Input = EMPTY_INPUT
+): StepResult {
+  const dt = Math.max(0, dtMs);
+  const nextState: GameState = (() => {
+    switch (state.phase) {
+      case "start":
+        return input.firePressed
+          ? createGameState({ phase: "playing" })
+          : advanceFrame(state);
+      case "waveClear":
+        return input.firePressed
+          ? createGameState({
+              phase: "playing",
+              wave: state.hud.wave + 1,
+              score: state.hud.score,
+              lives: state.hud.lives,
+              elapsedMs: state.elapsedMs
+            })
+          : advanceFrame(state);
+      case "gameOver":
+        return input.firePressed
+          ? createGameState({ phase: "playing" })
+          : advanceFrame(state);
+      case "paused":
+        return input.pausePressed
+          ? {
+              ...state,
+              phase: "playing"
+            }
+          : state;
+      case "lifeLost":
+        return advanceLifeLost(state, dt);
+      case "playing":
+        return advancePlaying(state, dt, input);
+    }
+  })();
+
+  return createStepResult(nextState, collectStepEvents(state, nextState, input));
+}
+
+function createStepResult(nextState: GameState, events: StepEvent[]): StepResult {
+  const result = { ...nextState } as StepResult;
+
+  Object.defineProperties(result, {
+    state: {
+      value: result,
+      enumerable: false,
+      writable: false,
+      configurable: false
+    },
+    events: {
+      value: [...events],
+      enumerable: false,
+      writable: false,
+      configurable: false
+    }
+  });
+
+  return result;
 }
 
 function advanceFrame(state: GameState): GameState {
@@ -542,6 +586,104 @@ function findShieldCollision(
   return collision === undefined
     ? undefined
     : { shieldId: collision.shieldId, cellId: collision.cellId };
+}
+
+function collectStepEvents(
+  previousState: GameState,
+  nextState: GameState,
+  input: Input
+): StepEvent[] {
+  const events: StepEvent[] = [];
+
+  if (didPlayerShoot(previousState, input)) {
+    events.push({
+      type: "playerShot",
+      projectileId: previousState.nextProjectileId
+    });
+  }
+
+  events.push(...collectShieldHitEvents(previousState.shields, nextState.shields));
+  events.push(...collectInvaderHitEvents(previousState.invaders, nextState.invaders));
+
+  if (previousState.phase !== "lifeLost" && nextState.phase === "lifeLost") {
+    events.push({
+      type: "lifeLost",
+      livesRemaining: nextState.hud.lives
+    });
+  }
+
+  if (previousState.phase !== "waveClear" && nextState.phase === "waveClear") {
+    events.push({
+      type: "waveClear",
+      wave: nextState.hud.wave
+    });
+  }
+
+  return events;
+}
+
+function didPlayerShoot(state: GameState, input: Input): boolean {
+  return (
+    state.phase === "playing" &&
+    !input.pausePressed &&
+    input.firePressed &&
+    state.player.shootCooldownMs <= 0
+  );
+}
+
+function collectShieldHitEvents(
+  previousShields: Shield[],
+  nextShields: Shield[]
+): StepEvent[] {
+  const nextCells = new Map<number, boolean>();
+
+  for (const shield of nextShields) {
+    for (const cell of shield.cells) {
+      nextCells.set(cell.id, cell.alive);
+    }
+  }
+
+  const events: StepEvent[] = [];
+
+  for (const shield of previousShields) {
+    for (const [index, cell] of shield.cells.entries()) {
+      if (!cell.alive || nextCells.get(cell.id) !== false) {
+        continue;
+      }
+
+      events.push({
+        type: "shieldHit",
+        shieldId: shield.id,
+        cellId: cell.id,
+        row: Math.floor(index / SHIELD_CELL_COLS),
+        col: index % SHIELD_CELL_COLS
+      });
+    }
+  }
+
+  return events;
+}
+
+function collectInvaderHitEvents(
+  previousInvaders: Invader[],
+  nextInvaders: Invader[]
+): StepEvent[] {
+  const remainingInvaderIds = new Set(nextInvaders.map((invader) => invader.id));
+  const events: StepEvent[] = [];
+
+  for (const invader of previousInvaders) {
+    if (remainingInvaderIds.has(invader.id)) {
+      continue;
+    }
+
+    events.push({
+      type: "invaderHit",
+      invaderId: invader.id,
+      points: invader.points
+    });
+  }
+
+  return events;
 }
 
 function getProjectilePath(

@@ -27,9 +27,13 @@ import {
   getPlayerMinX,
   type GameState
 } from "./state";
-import { step } from "./step";
+import { step as runStep } from "./step";
 
 const SHIELD_HIT_DT_MS = 21;
+
+function step(state: GameState, dtMs: number, input = EMPTY_INPUT): GameState {
+  return runStep(state, dtMs, input).state;
+}
 
 function createRespawnedPlayingState() {
   const lifeLost = {
@@ -178,6 +182,23 @@ describe("step", () => {
     expect(next.player.shootCooldownMs).toBe(PLAYER_SHOOT_COOLDOWN_MS);
   });
 
+  it("emits playerShot when the player projectile spawns", () => {
+    const state = createPlayingState();
+    const result = runStep(state, 16, { ...EMPTY_INPUT, firePressed: true });
+    const projectile = result.state.projectiles[0];
+
+    expect(projectile).toBeDefined();
+    if (projectile === undefined) {
+      throw new Error("Expected a spawned player projectile.");
+    }
+    expect(result.events).toEqual([
+      {
+        type: "playerShot",
+        projectileId: projectile.id
+      }
+    ]);
+  });
+
   it("creates a full set of live shield cells for a fresh playing state", () => {
     const state = createPlayingState();
 
@@ -205,6 +226,32 @@ describe("step", () => {
     expect(next.projectiles).toHaveLength(0);
     expect(getShieldCell(next, 0, targetRow, targetCol).alive).toBe(false);
     expect(countAliveShieldCells(next)).toBe(countAliveShieldCells(base) - 1);
+  });
+
+  it("emits shieldHit with the destroyed shield-cell coordinates", () => {
+    const targetRow = SHIELD_CELL_ROWS - 1;
+    const targetCol = 2;
+    const base = createPlayingState();
+    const targetCell = getShieldCell(base, 0, targetRow, targetCol);
+    const result = runStep(
+      {
+        ...base,
+        projectiles: [createShieldProjectile(base, targetRow, targetCol, 1, PROJECTILE_SPEED)],
+        nextProjectileId: 2
+      },
+      SHIELD_HIT_DT_MS,
+      EMPTY_INPUT
+    );
+
+    expect(result.events).toEqual([
+      {
+        type: "shieldHit",
+        shieldId: base.shields[0]?.id ?? 0,
+        cellId: targetCell.id,
+        row: targetRow,
+        col: targetCol
+      }
+    ]);
   });
 
   it("lets a projectile continue through a dead shield-cell gap", () => {
@@ -354,6 +401,24 @@ describe("step", () => {
     expect(next.projectiles).toHaveLength(0);
   });
 
+  it("emits lifeLost when the player is hit", () => {
+    const base = createPlayingState();
+    const result = runStep(
+      {
+        ...base,
+        projectiles: [createInvaderTestProjectile(base, base.player.y)],
+        nextProjectileId: 2
+      },
+      0,
+      EMPTY_INPUT
+    );
+
+    expect(result.events).toContainEqual({
+      type: "lifeLost",
+      livesRemaining: base.hud.lives - 1
+    });
+  });
+
   it("does not lose another life from an overlapping invader projectile during life lost", () => {
     const base = createPlayingState({ lives: 2 });
     const lifeLost = {
@@ -412,6 +477,48 @@ describe("step", () => {
 
     expect(next.invaders).toHaveLength(0);
     expect(next.hud.score).toBe((invader?.points ?? 0) + base.hud.score);
+  });
+
+  it("emits invaderHit with the destroyed invader id and points", () => {
+    const base = createPlayingState();
+    const invaderA = base.invaders[0];
+    const invaderB = base.invaders[1];
+
+    expect(invaderA).toBeDefined();
+    expect(invaderB).toBeDefined();
+    if (invaderA === undefined || invaderB === undefined) {
+      throw new Error("Expected invaders for collision test.");
+    }
+
+    const result = runStep(
+      {
+        ...base,
+        invaders: [invaderA, invaderB],
+        projectiles: [
+          {
+            id: 1,
+            owner: "player" as const,
+            x: invaderA.x,
+            y: invaderA.y + 6,
+            width: invaderA.width,
+            height: invaderA.height,
+            velocityY: 0,
+            active: true
+          }
+        ],
+        nextProjectileId: 2
+      },
+      0,
+      EMPTY_INPUT
+    );
+
+    expect(result.events).toEqual([
+      {
+        type: "invaderHit",
+        invaderId: invaderA.id,
+        points: invaderA.points
+      }
+    ]);
   });
 
   it("consumes only the projectile that hit an invader", () => {
@@ -482,6 +589,42 @@ describe("step", () => {
 
     expect(next.phase).toBe("waveClear");
     expect(next.projectiles).toHaveLength(0);
+  });
+
+  it("emits waveClear when the last invader is destroyed", () => {
+    const base = createPlayingState();
+    const invader = base.invaders[0];
+
+    expect(invader).toBeDefined();
+    if (invader === undefined) {
+      throw new Error("Expected an invader for wave-clear test.");
+    }
+
+    const result = runStep(
+      {
+        ...base,
+        invaders: [invader],
+        projectiles: [
+          {
+            id: 1,
+            owner: "player" as const,
+            x: invader.x,
+            y: invader.y,
+            width: invader.width,
+            height: invader.height,
+            velocityY: 0,
+            active: true
+          }
+        ]
+      },
+      0,
+      EMPTY_INPUT
+    );
+
+    expect(result.events).toContainEqual({
+      type: "waveClear",
+      wave: base.hud.wave
+    });
   });
 
   it("starts the next wave from wave clear and preserves score and lives", () => {
