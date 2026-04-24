@@ -59,6 +59,7 @@ type MockPlayback = {
 type MockWebAudioHarness = {
   initialState: AudioContextState;
   throwOnAudioContextConstruction: boolean;
+  throwOnResume: boolean;
   readonly destination: MockDestination;
   readonly contexts: MockAudioContext[];
   readonly oscillators: MockOscillatorNode[];
@@ -143,6 +144,7 @@ function installMockWebAudio(
   const harness: MockWebAudioHarness = {
     initialState,
     throwOnAudioContextConstruction: false,
+    throwOnResume: false,
     destination,
     contexts,
     oscillators,
@@ -163,6 +165,10 @@ function installMockWebAudio(
         destination,
         currentTime: 0,
         resume: vi.fn(async () => {
+          if (harness.throwOnResume) {
+            throw new Error("AudioContext resume failed");
+          }
+
           context.state = "running";
         }),
         createOscillator: vi.fn(() => {
@@ -362,8 +368,23 @@ describe("createSfxController", () => {
     expect(controller.getStatus()).toBe("ready");
   });
 
-  it("mutes itself when AudioContext construction fails and play becomes a no-op", async () => {
+  it("reports unavailable when AudioContext construction fails and play becomes a no-op", async () => {
     harness.throwOnAudioContextConstruction = true;
+
+    const controller = createSfxController();
+
+    await controller.arm();
+    controller.play("shoot");
+    controller.setMuted(true);
+
+    expect(harness.audioContextConstructor).toHaveBeenCalledTimes(1);
+    expect(controller.getStatus()).toBe("unavailable");
+    expect(harness.oscillators).toHaveLength(0);
+    expect(harness.gains).toHaveLength(0);
+  });
+
+  it("reports unavailable when AudioContext.resume fails and only recovers through a fresh context", async () => {
+    harness.throwOnResume = true;
 
     const controller = createSfxController();
 
@@ -371,9 +392,15 @@ describe("createSfxController", () => {
     controller.play("shoot");
 
     expect(harness.audioContextConstructor).toHaveBeenCalledTimes(1);
-    expect(controller.getStatus()).toBe("muted");
+    expect(controller.getStatus()).toBe("unavailable");
     expect(harness.oscillators).toHaveLength(0);
     expect(harness.gains).toHaveLength(0);
+
+    harness.throwOnResume = false;
+    await controller.arm();
+
+    expect(harness.audioContextConstructor).toHaveBeenCalledTimes(2);
+    expect(controller.getStatus()).toBe("ready");
   });
 
   it("reports muted while the user mute preference is enabled, even after arming", async () => {
@@ -400,13 +427,17 @@ describe("createSfxController", () => {
   it("restores playback after the user mute preference is cleared", async () => {
     const controller = createSfxController();
 
-    controller.setMuted(true);
     await controller.arm();
+    controller.setMuted(true);
+
+    expect(controller.getStatus()).toBe("muted");
+
     controller.setMuted(false);
+
+    expect(controller.getStatus()).toBe("ready");
 
     const playback = capturePlayback(harness, controller, "shoot");
 
-    expect(controller.getStatus()).toBe("ready");
     expectScheduledShortBeeps(playback, harness.destination);
   });
 
