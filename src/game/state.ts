@@ -93,6 +93,7 @@ export type GameState = {
   hud: HudState;
   frame: number;
   marchFrame: 0 | 1;
+  marchAnimTimerMs: number;
   playerShootFrame: number;
   nextProjectileId: number;
   invaderFireCooldownMs: number;
@@ -148,6 +149,7 @@ export const INVADER_WAVE_SPEED_STEP =
   FORMATION_SPEED_BASE * FORMATION_SPEED_PER_WAVE;
 export const INVADER_DESCEND_STEP = 24;
 export const LIFE_LOST_DURATION_MS = 900;
+export const MARCH_FRAME_INTERVAL_MS = 500;
 export const RESPAWN_INVULNERABILITY_MS = 1500;
 
 export const EMPTY_INPUT: Input = {
@@ -198,6 +200,7 @@ export function createGameState(seed: GameStateSeed = {}): GameState {
     },
     frame: seed.frame ?? 0,
     marchFrame: 0,
+    marchAnimTimerMs: 0,
     playerShootFrame: 0,
     nextProjectileId,
     invaderFireCooldownMs,
