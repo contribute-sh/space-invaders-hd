@@ -1,8 +1,9 @@
 export type SfxName = "shoot" | "hit" | "playerDeath" | "waveClear";
+export type AudioStatus = "idle" | "ready" | "muted" | "unavailable";
 
 export type SfxController = {
   arm: () => Promise<void>;
-  getStatus: () => "idle" | "ready" | "muted";
+  getStatus: () => AudioStatus;
   play: (name: SfxName) => void;
   setMuted: (muted: boolean) => void;
 };
@@ -18,16 +19,24 @@ const SFX_COOLDOWN_SECONDS = 0.03;
 
 export function createSfxController(): SfxController {
   let context: AudioContext | null = null;
-  let status: "idle" | "ready" | "muted" = "idle";
+  let status: Exclude<AudioStatus, "muted"> = "idle";
   let muted = false;
   const lastPlayedAtByName = new Map<SfxName, number>();
 
+  const getStatus = (): AudioStatus => {
+    if (status === "unavailable") {
+      return "unavailable";
+    }
+
+    if (muted) {
+      return "muted";
+    }
+
+    return status;
+  };
+
   return {
     arm: async () => {
-      if (status === "muted") {
-        return;
-      }
-
       try {
         if (context === null) {
           context = new AudioContext();
@@ -38,12 +47,20 @@ export function createSfxController(): SfxController {
         }
         status = "ready";
       } catch {
-        status = "muted";
+        context = null;
+        status = "unavailable";
       }
     },
-    getStatus: () => (muted ? "muted" : status),
+    getStatus,
     play: (name) => {
-      if (muted || status !== "ready" || context === null) {
+      const currentStatus = getStatus();
+
+      if (
+        currentStatus === "muted" ||
+        currentStatus === "unavailable" ||
+        status !== "ready" ||
+        context === null
+      ) {
         return;
       }
 

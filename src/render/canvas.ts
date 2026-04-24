@@ -1,3 +1,4 @@
+import type { AudioStatus } from "../audio/sfx";
 import type { GameState, Invader, Projectile } from "../game/state";
 import { CONTROL_FOOTER, OVERLAY_PROMPTS } from "../input/bindings";
 import {
@@ -9,7 +10,7 @@ import { applyViewport, computeViewport, type Viewport } from "./viewport";
 export type RenderFlags = {
   bootstrapping: boolean;
   highScore: number;
-  muted: boolean;
+  audioStatus: AudioStatus;
 };
 
 export type CanvasRenderer = {
@@ -119,9 +120,7 @@ function drawScene(
   drawFloor(context, state);
   drawControlHints(context, state);
 
-  if (flags.muted) {
-    drawMutedBadge(context, state);
-  }
+  drawMutedBadge(context, state, flags.audioStatus);
 
   if (flags.bootstrapping) {
     drawOverlay(context, state, "Initializing canvas...", "Preparing the first frame");
@@ -364,9 +363,14 @@ function drawControlHints(
 
 function drawMutedBadge(
   context: CanvasRenderingContext2D,
-  state: GameState
+  state: GameState,
+  status: AudioStatus
 ): void {
-  const label = "Sound unavailable";
+  if (status === "idle" || status === "ready") {
+    return;
+  }
+
+  const label = status === "muted" ? "Muted" : "Sound unavailable";
   const width = 168;
   const x = state.arena.width - width - 28;
   const y = 96;
