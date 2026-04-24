@@ -7,6 +7,11 @@ import {
   type SpriteDescriptor,
   type SpriteSheet
 } from "./sprites";
+import {
+  applyViewport,
+  computeViewport,
+  type Viewport
+} from "./viewport";
 
 export type RenderFlags = {
   bootstrapping: boolean;
@@ -48,30 +53,120 @@ export function createCanvasRenderer(canvas: HTMLCanvasElement): CanvasRenderer 
     throw new Error("Canvas 2D is unavailable.");
   }
 
+  const viewportContext = createViewportContext(canvas, context);
+
   return {
     render: (state, flags) => {
-      syncCanvasSize(canvas, context, state.arena.width, state.arena.height);
+      const viewport = computeViewport(
+        getViewportWindow(canvas, state.arena.width, state.arena.height),
+        canvas,
+        state.arena.width,
+        state.arena.height
+      );
+
+      resizeCanvas(canvas, viewport);
+      clearViewport(context, viewport);
+      applyViewport(viewportContext, viewport);
       drawScene(context, state, flags);
     }
   };
 }
 
-function syncCanvasSize(
+function resizeCanvas(
   canvas: HTMLCanvasElement,
-  context: CanvasRenderingContext2D,
-  logicalWidth: number,
-  logicalHeight: number
+  viewport: Viewport
 ): void {
-  const dpr = window.devicePixelRatio || 1;
-  const renderWidth = Math.round(logicalWidth * dpr);
-  const renderHeight = Math.round(logicalHeight * dpr);
-
-  if (canvas.width !== renderWidth || canvas.height !== renderHeight) {
-    canvas.width = renderWidth;
-    canvas.height = renderHeight;
+  if (canvas.width !== viewport.backingWidth) {
+    canvas.width = viewport.backingWidth;
   }
 
-  context.setTransform(dpr, 0, 0, dpr, 0, 0);
+  if (canvas.height !== viewport.backingHeight) {
+    canvas.height = viewport.backingHeight;
+  }
+
+  const cssWidth = `${viewport.cssWidth}px`;
+
+  if (canvas.style.width !== cssWidth) {
+    canvas.style.width = cssWidth;
+  }
+
+  const cssHeight = `${viewport.cssHeight}px`;
+
+  if (canvas.style.height !== cssHeight) {
+    canvas.style.height = cssHeight;
+  }
+}
+
+function clearViewport(
+  context: CanvasRenderingContext2D,
+  viewport: Viewport
+): void {
+  context.setTransform(1, 0, 0, 1, 0, 0);
+  context.fillStyle = "#02050e";
+  context.fillRect(0, 0, viewport.backingWidth, viewport.backingHeight);
+}
+
+function createViewportContext(
+  canvas: HTMLCanvasElement,
+  context: CanvasRenderingContext2D
+): {
+  canvas: {
+    height: number;
+    width: number;
+  };
+  setTransform: (
+    a: number,
+    b: number,
+    c: number,
+    d: number,
+    e: number,
+    f: number
+  ) => void;
+} {
+  return {
+    canvas: {
+      get height() {
+        return canvas.height;
+      },
+      set height(value: number) {
+        if (canvas.height !== value) {
+          canvas.height = value;
+        }
+      },
+      get width() {
+        return canvas.width;
+      },
+      set width(value: number) {
+        if (canvas.width !== value) {
+          canvas.width = value;
+        }
+      }
+    },
+    setTransform: (a, b, c, d, e, f) => {
+      context.setTransform(a, b, c, d, e, f);
+    }
+  };
+}
+
+function getViewportWindow(
+  canvas: HTMLCanvasElement,
+  logicalWidth: number,
+  logicalHeight: number
+): Parameters<typeof computeViewport>[0] {
+  const viewportWindow =
+    typeof globalThis.window === "object" ? globalThis.window : undefined;
+
+  return {
+    devicePixelRatio: viewportWindow?.devicePixelRatio,
+    innerWidth:
+      viewportWindow?.innerWidth ??
+      (canvas.clientWidth > 0 ? canvas.clientWidth : (canvas.width || logicalWidth)),
+    innerHeight:
+      viewportWindow?.innerHeight ??
+      (canvas.clientHeight > 0
+        ? canvas.clientHeight
+        : (canvas.height || logicalHeight))
+  };
 }
 
 function drawScene(

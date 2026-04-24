@@ -35,6 +35,8 @@ type FillTextCall = {
   y: number;
 };
 
+type SetTransformCall = [number, number, number, number, number, number];
+
 class FakeCanvasGradient {
   readonly colorStops: Array<{ color: string; offset: number }> = [];
 
@@ -46,6 +48,7 @@ class FakeCanvasGradient {
 class FakeCanvasContext {
   readonly fillRectCalls: FillRectCall[] = [];
   readonly fillTextCalls: FillTextCall[] = [];
+  readonly setTransformCalls: SetTransformCall[] = [];
 
   fillStyle: string | CanvasGradient | CanvasPattern = "";
   font = "";
@@ -97,17 +100,45 @@ class FakeCanvasContext {
 
   roundRect(): void {}
 
-  setTransform(): void {}
+  setTransform(
+    a: number,
+    b: number,
+    c: number,
+    d: number,
+    e: number,
+    f: number
+  ): void {
+    this.setTransformCalls.push([a, b, c, d, e, f]);
+  }
 
   stroke(): void {}
 }
 
-function createFakeCanvas(context: FakeCanvasContext): HTMLCanvasElement {
+function createFakeCanvas(
+  context: FakeCanvasContext,
+  overrides: Partial<{
+    clientHeight: number;
+    clientWidth: number;
+    height: number;
+    style: {
+      height: string;
+      width: string;
+    };
+    width: number;
+  }> = {}
+): HTMLCanvasElement {
   return {
     getContext: (contextId: string) =>
       contextId === "2d" ? (context as unknown as CanvasRenderingContext2D) : null,
+    clientHeight: 0,
+    clientWidth: 0,
     height: 0,
-    width: 0
+    style: {
+      height: "",
+      width: ""
+    },
+    width: 0,
+    ...overrides
   } as HTMLCanvasElement;
 }
 
@@ -245,6 +276,38 @@ describe("createCanvasRenderer", () => {
     ).toBe(true);
   });
 
+  it("sizes the backing store and applies a letterboxed viewport transform on wide screens", () => {
+    vi.stubGlobal("window", {
+      devicePixelRatio: 2,
+      innerHeight: 600,
+      innerWidth: 1200
+    });
+
+    const context = new FakeCanvasContext();
+    const canvas = createFakeCanvas(context, {
+      clientHeight: 600,
+      clientWidth: 1200
+    });
+    const renderer = createCanvasRenderer(canvas);
+    const state = {
+      ...createPlayingState(),
+      invaders: [],
+      projectiles: []
+    };
+
+    renderer.render(state, {
+      bootstrapping: false,
+      highScore: 0,
+      muted: false
+    });
+
+    expect(canvas.width).toBe(2400);
+    expect(canvas.height).toBe(1200);
+    expect(canvas.style.width).toBe("1200px");
+    expect(canvas.style.height).toBe("600px");
+    expect(context.setTransformCalls).toContainEqual([5 / 3, 0, 0, 5 / 3, 400, 0]);
+  });
+
   it("renders the invulnerability halo and blinks the ship off on deterministic off frames", () => {
     vi.stubGlobal("window", { devicePixelRatio: 1 });
 
@@ -269,6 +332,35 @@ describe("createCanvasRenderer", () => {
 
     expect(findPlayerInvulnerabilityHalo(context, state)).toBeDefined();
     expect(getPlayerShipFillRects(context, state)).toHaveLength(0);
+  });
+
+  it("keeps sprite drawing in logical coordinates on portrait viewports", () => {
+    vi.stubGlobal("window", {
+      devicePixelRatio: 1,
+      innerHeight: 1200,
+      innerWidth: 600
+    });
+
+    const context = new FakeCanvasContext();
+    const canvas = createFakeCanvas(context, {
+      clientHeight: 1200,
+      clientWidth: 600
+    });
+    const renderer = createCanvasRenderer(canvas);
+    const state = {
+      ...createPlayingState({ elapsedMs: 360 }),
+      invaders: [],
+      projectiles: []
+    };
+
+    renderer.render(state, {
+      bootstrapping: false,
+      highScore: 0,
+      muted: false
+    });
+
+    expect(context.setTransformCalls).toContainEqual([0.625, 0, 0, 0.625, 0, 375]);
+    expect(getPlayerShipFillRects(context, state)).toHaveLength(PLAYER_SHIP_PIXEL_COUNT);
   });
 
   it("renders the normal ship without invulnerability halo artifacts once the timer expires", () => {
