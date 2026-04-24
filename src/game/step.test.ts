@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   EMPTY_INPUT,
+  FORMATION_SPEED_BASE,
   FORMATION_SPEED_MAX,
   INVADER_COLS,
   INVADER_FIRE_INTERVAL_MS,
@@ -11,6 +12,7 @@ import {
   INVADER_PROJECTILE_WIDTH,
   INVADER_ROWS,
   LIFE_LOST_DURATION_MS,
+  MARCH_FRAME_INTERVAL_MS,
   PLAYER_SHOOT_COOLDOWN_MS,
   PROJECTILE_HEIGHT,
   PROJECTILE_SPEED,
@@ -109,6 +111,14 @@ function createInvaderTestProjectile(
     velocityY: INVADER_PROJECTILE_SPEED,
     active: true
   };
+}
+
+function getMarchAnimationIntervalMs(state: GameState): number {
+  return (
+    MARCH_FRAME_INTERVAL_MS *
+    (FORMATION_SPEED_BASE /
+      getFormationSpeed(state.invaders.length, state.formation.speed))
+  );
 }
 
 describe("step", () => {
@@ -523,6 +533,68 @@ describe("step", () => {
 
     expect(next.phase).toBe("playing");
   });
+
+  it("does not change marchFrame after a single 1/60s tick from a fresh playing state", () => {
+    const state = createPlayingState();
+    const next = step(state, 1000 / 60, EMPTY_INPUT);
+
+    expect(next.marchFrame).toBe(state.marchFrame);
+    expect(next.marchAnimTimerMs).toBeCloseTo(1000 / 60);
+  });
+
+  it("toggles marchFrame after enough cumulative dt at the starting formation speed", () => {
+    const state = createPlayingState();
+    const almost = step(state, MARCH_FRAME_INTERVAL_MS - 1, EMPTY_INPUT);
+    const next = step(almost, 1, EMPTY_INPUT);
+
+    expect(almost.marchFrame).toBe(state.marchFrame);
+    expect(next.marchFrame).toBe(1);
+    expect(next.marchAnimTimerMs).toBe(0);
+  });
+
+  it("speeds up the march animation cadence as the formation speed increases", () => {
+    const full = createPlayingState();
+    const reduced = {
+      ...createPlayingState(),
+      invaders: createPlayingState().invaders.slice(0, 5)
+    };
+    const reducedIntervalMs = Math.ceil(getMarchAnimationIntervalMs(reduced));
+
+    expect(reducedIntervalMs).toBeLessThan(getMarchAnimationIntervalMs(full));
+    expect(step(full, reducedIntervalMs, EMPTY_INPUT).marchFrame).toBe(0);
+    expect(step(reduced, reducedIntervalMs, EMPTY_INPUT).marchFrame).toBe(1);
+  });
+
+  it("preserves leftover march animation time across step calls", () => {
+    const state = createPlayingState();
+    const almost = step(state, MARCH_FRAME_INTERVAL_MS - 10, EMPTY_INPUT);
+    const toggled = step(almost, 20, EMPTY_INPUT);
+    const almostAgain = step(toggled, MARCH_FRAME_INTERVAL_MS - 11, EMPTY_INPUT);
+    const toggledAgain = step(almostAgain, 1, EMPTY_INPUT);
+
+    expect(almost.marchAnimTimerMs).toBe(MARCH_FRAME_INTERVAL_MS - 10);
+    expect(toggled.marchFrame).toBe(1);
+    expect(toggled.marchAnimTimerMs).toBe(10);
+    expect(almostAgain.marchFrame).toBe(1);
+    expect(almostAgain.marchAnimTimerMs).toBe(MARCH_FRAME_INTERVAL_MS - 1);
+    expect(toggledAgain.marchFrame).toBe(0);
+    expect(toggledAgain.marchAnimTimerMs).toBe(0);
+  });
+
+  it.each(["start", "gameOver", "waveClear", "paused"] as const)(
+    "does not advance marchFrame while %s",
+    (phase) => {
+      const state = {
+        ...createGameState({ phase }),
+        marchFrame: 1 as const,
+        marchAnimTimerMs: MARCH_FRAME_INTERVAL_MS - 1
+      };
+      const next = step(state, MARCH_FRAME_INTERVAL_MS * 2, EMPTY_INPUT);
+
+      expect(next.marchFrame).toBe(1);
+      expect(next.marchAnimTimerMs).toBe(state.marchAnimTimerMs);
+    }
+  );
 
   it("marches invaders horizontally", () => {
     const state = createPlayingState();

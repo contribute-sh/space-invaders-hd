@@ -1,7 +1,9 @@
 import {
   EMPTY_INPUT,
+  FORMATION_SPEED_BASE,
   INVADER_FIRE_INTERVAL_MS,
   LIFE_LOST_DURATION_MS,
+  MARCH_FRAME_INTERVAL_MS,
   PLAYER_SHOOT_COOLDOWN_MS,
   RESPAWN_INVULNERABILITY_MS,
   createInvaderProjectile,
@@ -178,14 +180,12 @@ function advancePlaying(state: GameState, dtMs: number, input: Input): GameState
     state.shields
   );
   const formationBundle = moveInvaders(state, dtSeconds);
+  const marchAnimation = advanceMarchAnimation(state, dtMs);
   const collisionBundle = resolveProjectileHits(
     projectileShieldBundle.projectiles,
     formationBundle.invaders
   );
   const score = state.hud.score + collisionBundle.scoreDelta;
-  const marchFrame = formationBundle.didAdvance
-    ? toggleMarchFrame(state.marchFrame)
-    : state.marchFrame;
   const playerIsInvulnerable =
     movedPlayer.invulnerableUntilMs > nextElapsedMs;
   const playerHitProjectile = playerIsInvulnerable
@@ -209,7 +209,8 @@ function advancePlaying(state: GameState, dtMs: number, input: Input): GameState
     return {
       ...state,
       phase: "lifeLost",
-      marchFrame,
+      marchAnimTimerMs: marchAnimation.marchAnimTimerMs,
+      marchFrame: marchAnimation.marchFrame,
       playerShootFrame: 0,
       player: {
         ...movedPlayer,
@@ -236,7 +237,8 @@ function advancePlaying(state: GameState, dtMs: number, input: Input): GameState
     return {
       ...state,
       phase: "waveClear",
-      marchFrame,
+      marchAnimTimerMs: marchAnimation.marchAnimTimerMs,
+      marchFrame: marchAnimation.marchFrame,
       playerShootFrame: projectileBundle.playerShootFrame,
       player: {
         ...movedPlayer,
@@ -260,7 +262,8 @@ function advancePlaying(state: GameState, dtMs: number, input: Input): GameState
 
   return {
     ...state,
-    marchFrame,
+    marchAnimTimerMs: marchAnimation.marchAnimTimerMs,
+    marchFrame: marchAnimation.marchFrame,
     playerShootFrame: projectileBundle.playerShootFrame,
     player: {
       ...movedPlayer,
@@ -410,7 +413,6 @@ function moveInvaders(
   state: GameState,
   dtSeconds: number
 ): {
-  didAdvance: boolean;
   formation: GameState["formation"];
   invaders: Invader[];
 } {
@@ -447,13 +449,54 @@ function moveInvaders(
   }
 
   return {
-    didAdvance: dtSeconds > 0 && state.invaders.length > 0,
     formation: {
       ...state.formation,
       direction
     },
     invaders
   };
+}
+
+function advanceMarchAnimation(
+  state: GameState,
+  dtMs: number
+): {
+  marchAnimTimerMs: number;
+  marchFrame: GameState["marchFrame"];
+} {
+  if (dtMs <= 0 || state.invaders.length === 0) {
+    return {
+      marchAnimTimerMs: state.marchAnimTimerMs,
+      marchFrame: state.marchFrame
+    };
+  }
+
+  const intervalMs = getMarchFrameIntervalMs(
+    state.invaders.length,
+    state.formation.speed
+  );
+  let marchAnimTimerMs = state.marchAnimTimerMs + dtMs;
+  let marchFrame = state.marchFrame;
+
+  while (marchAnimTimerMs >= intervalMs) {
+    marchAnimTimerMs -= intervalMs;
+    marchFrame = toggleMarchFrame(marchFrame);
+  }
+
+  return {
+    marchAnimTimerMs,
+    marchFrame
+  };
+}
+
+function getMarchFrameIntervalMs(
+  invaderCount: number,
+  waveStartSpeed: number
+): number {
+  const currentSpeed = getFormationSpeed(invaderCount, waveStartSpeed);
+
+  // Keep the sprite flip cadence proportional to the formation's live speed.
+  return MARCH_FRAME_INTERVAL_MS * (FORMATION_SPEED_BASE / currentSpeed);
 }
 
 function resolveProjectileHits(
