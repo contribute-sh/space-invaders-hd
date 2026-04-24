@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { createPlayingState } from "../game/state";
+import { createGameState, createPlayingState } from "../game/state";
+import { CONTROL_FOOTER, OVERLAY_PROMPTS } from "../input/bindings";
 import { createCanvasRenderer } from "./canvas";
 import { PLAYER_SHIP_DESCRIPTOR } from "./sprites";
 
@@ -378,5 +379,54 @@ describe("createCanvasRenderer", () => {
 
     expect(findPlayerInvulnerabilityHalo(context, state)).toBeUndefined();
     expect(getPlayerShipFillRects(context, state)).toHaveLength(PLAYER_SHIP_PIXEL_COUNT);
+  });
+
+  it("renders the shared control footer", () => {
+    vi.stubGlobal("window", { devicePixelRatio: 1 });
+
+    const context = new FakeCanvasContext();
+    const canvas = createFakeCanvas(context);
+    const renderer = createCanvasRenderer(canvas);
+    const state = {
+      ...createPlayingState(),
+      invaders: [],
+      projectiles: []
+    };
+
+    renderer.render(state, {
+      bootstrapping: false,
+      highScore: 0,
+      muted: false
+    });
+
+    expect(
+      context.fillTextCalls.some((call) => call.text === CONTROL_FOOTER)
+    ).toBe(true);
+  });
+
+  it("renders the shared game-over prompt", () => {
+    vi.stubGlobal("window", { devicePixelRatio: 1 });
+
+    const context = new FakeCanvasContext();
+    const canvas = createFakeCanvas(context);
+    const renderer = createCanvasRenderer(canvas);
+    const state = {
+      ...createGameState({ phase: "gameOver", score: 440, wave: 3 }),
+      invaders: [],
+      projectiles: []
+    };
+
+    renderer.render(state, {
+      bootstrapping: false,
+      highScore: 0,
+      muted: false
+    });
+
+    expect(
+      context.fillTextCalls.some((call) => call.text === OVERLAY_PROMPTS.gameOver)
+    ).toBe(true);
+    expect(
+      context.fillTextCalls.some((call) => call.text === "Press Space to Restart")
+    ).toBe(false);
   });
 });

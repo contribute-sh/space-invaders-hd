@@ -1,4 +1,5 @@
 import type { GameState, Invader, Projectile } from "../game/state";
+import { CONTROL_FOOTER, OVERLAY_PROMPTS } from "../input/bindings";
 import {
   getSprite,
   type PreparedSprite
@@ -134,7 +135,7 @@ function drawScene(
         state,
         "Space Invaders MVP",
         "Arrow keys move  |  Space fires  |  P pauses",
-        "Press Space to Start"
+        OVERLAY_PROMPTS.start
       );
       break;
     case "paused":
@@ -143,7 +144,7 @@ function drawScene(
         state,
         "Paused",
         "Simulation is frozen",
-        "Press P to Resume"
+        OVERLAY_PROMPTS.pause
       );
       break;
     case "waveClear":
@@ -152,7 +153,7 @@ function drawScene(
         state,
         "Wave Clear",
         `Score ${padScore(state.hud.score)}  |  Lives ${state.hud.lives}`,
-        "Press Space for Next Wave"
+        OVERLAY_PROMPTS.waveClear
       );
       break;
     case "gameOver":
@@ -161,7 +162,7 @@ function drawScene(
         state,
         "Game Over",
         `Final Score ${padScore(state.hud.score)}  |  Wave ${state.hud.wave}`,
-        "Press Space to Restart"
+        OVERLAY_PROMPTS.gameOver
       );
       break;
     case "lifeLost":
@@ -358,11 +359,7 @@ function drawControlHints(
 ): void {
   context.font = '500 14px "Arial Narrow", "Avenir Next Condensed", sans-serif';
   context.fillStyle = "rgba(215, 239, 255, 0.64)";
-  context.fillText(
-    "Controls: Arrow keys move  |  Space fires / confirms  |  P pauses",
-    44,
-    state.arena.height - 24
-  );
+  context.fillText(CONTROL_FOOTER, 44, state.arena.height - 24);
 }
 
 function drawMutedBadge(
