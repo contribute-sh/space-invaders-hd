@@ -337,6 +337,105 @@ describe("step", () => {
     expect(step(almost, 1, EMPTY_INPUT).projectiles.some((projectile) => projectile.owner === "invader")).toBe(true);
   });
 
+  it("does not let an invader killed by the player in the same frame fire", () => {
+    const base = createPlayingState();
+    const invader = base.invaders.find(
+      (candidate) => candidate.col === 0 && candidate.row === INVADER_ROWS - 1
+    );
+    expect(invader).toBeDefined();
+    const state = {
+      ...base,
+      invaders: invader === undefined ? [] : [invader],
+      projectiles: [
+        {
+          id: 1,
+          owner: "player" as const,
+          x: invader?.x ?? 0,
+          y: invader?.y ?? 0,
+          width: invader?.width ?? 0,
+          height: invader?.height ?? 0,
+          velocityY: 0,
+          active: true
+        }
+      ],
+      nextProjectileId: 2,
+      invaderFireCooldownMs: 0
+    };
+
+    const next = stepWithEvents(state, 0, EMPTY_INPUT);
+
+    expect(next.events).toEqual([
+      {
+        type: "invaderHit",
+        invaderId: invader?.id ?? 0,
+        points: invader?.points ?? 0
+      },
+      { type: "waveClear" }
+    ]);
+    expect(next.state.phase).toBe("waveClear");
+    expect(next.state.projectiles).toHaveLength(0);
+    expect(next.state.invaderFireCooldownMs).toBe(0);
+    expect(next.state.invaderFireCooldownMs).not.toBe(INVADER_FIRE_INTERVAL_MS);
+  });
+
+  it("spawns invader projectiles from the firing invader's post-march position", () => {
+    const base = createPlayingState();
+    const invader = base.invaders[0];
+    expect(invader).toBeDefined();
+    const state = {
+      ...base,
+      invaders: invader === undefined ? [] : [invader],
+      invaderFireCooldownMs: 0
+    };
+    const dtMs = 100;
+    const next = step(state, dtMs, EMPTY_INPUT);
+    const projectile = next.projectiles.find(
+      (candidate) => candidate.owner === "invader"
+    );
+    const movedInvader = next.invaders[0];
+
+    expect(projectile).toBeDefined();
+    expect(movedInvader).toBeDefined();
+    expect(next.invaderFireCooldownMs).toBe(INVADER_FIRE_INTERVAL_MS);
+    expect(projectile?.x).toBe(
+      (movedInvader?.x ?? 0) +
+        (movedInvader?.width ?? 0) / 2 -
+        INVADER_PROJECTILE_WIDTH / 2
+    );
+    expect(projectile?.y).toBe(
+      (movedInvader?.y ?? 0) +
+        (movedInvader?.height ?? 0) +
+        (INVADER_PROJECTILE_SPEED * dtMs) / 1000
+    );
+  });
+
+  it("moves and collides a newly spawned invader projectile in the same tick", () => {
+    const base = createPlayingState();
+    const invader = base.invaders[0];
+    expect(invader).toBeDefined();
+    const state = {
+      ...base,
+      invaders:
+        invader === undefined
+          ? []
+          : [
+              {
+                ...invader,
+                x: base.player.x + (base.player.width - invader.width) / 2,
+                y: base.player.y - invader.height - INVADER_PROJECTILE_HEIGHT
+              }
+            ],
+      invaderFireCooldownMs: 0
+    };
+
+    const next = stepWithEvents(state, 16, EMPTY_INPUT);
+
+    expect(next.events).toEqual([{ type: "lifeLost" }]);
+    expect(next.state.phase).toBe("lifeLost");
+    expect(next.state.hud.lives).toBe(base.hud.lives - 1);
+    expect(next.state.projectiles).toHaveLength(0);
+  });
+
   it.each(["start", "waveClear", "gameOver", "paused"] as const)(
     "does not spawn invader projectiles while %s",
     (phase) => {
