@@ -44,6 +44,90 @@ class FakeBeforeUnloadTarget {
   }
 }
 
+class FakeElement {
+  readonly children: FakeElement[] = [];
+  readonly tagName: string;
+  className = "";
+  textContent: string | null = null;
+  private readonly attributes = new Map<string, string>();
+
+  constructor(tagName: string) {
+    this.tagName = tagName.toUpperCase();
+  }
+
+  append(...nodes: FakeElement[]): void {
+    this.children.push(...nodes);
+  }
+
+  replaceChildren(...nodes: FakeElement[]): void {
+    this.children.length = 0;
+    this.children.push(...nodes);
+  }
+
+  setAttribute(name: string, value: string): void {
+    this.attributes.set(name, value);
+  }
+
+  getAttribute(name: string): string | null {
+    return this.attributes.get(name) ?? null;
+  }
+
+  querySelector(selector: string): FakeElement | null {
+    for (const child of this.children) {
+      if (child.matches(selector)) {
+        return child;
+      }
+
+      const match = child.querySelector(selector);
+      if (match !== null) {
+        return match;
+      }
+    }
+
+    return null;
+  }
+
+  private matches(selector: string): boolean {
+    if (selector.startsWith(".")) {
+      return this.className
+        .split(/\s+/u)
+        .filter((token) => token.length > 0)
+        .includes(selector.slice(1));
+    }
+
+    return this.tagName === selector.toUpperCase();
+  }
+}
+
+class FakeCanvasElement extends FakeElement {
+  constructor() {
+    super("canvas");
+  }
+
+  getContext(): null {
+    return null;
+  }
+}
+
+class FakeDocument {
+  readonly body = new FakeElement("body");
+  hidden = false;
+
+  addEventListener(): void {}
+
+  removeEventListener(): void {}
+
+  createElement(tagName: "canvas"): FakeCanvasElement;
+  createElement(tagName: string): FakeElement;
+  createElement(tagName: string): FakeElement {
+    return tagName === "canvas" ? new FakeCanvasElement() : new FakeElement(tagName);
+  }
+
+  querySelector(selector: string): FakeElement | null {
+    return this.body.querySelector(selector);
+  }
+}
+
 function createInput(input: Partial<Input> = {}): Input { return { ...EMPTY_INPUT, ...input }; }
 function createHarness(options: HarnessOptions = {}) {
   const storage = new FakeStorage({
@@ -209,6 +293,39 @@ describe("bootstrap", () => {
   });
   it("throws when the game canvas is missing", () => {
     expect(() => bootstrap({ findCanvas: () => null })).toThrowError("Game canvas not found.");
+  });
+
+  it("renders the canvas fallback into the injected document as plain text", () => {
+    const fallbackDocument = new FakeDocument();
+    const frame = fallbackDocument.createElement("section");
+    frame.className = "frame";
+    frame.setAttribute("aria-label", "Game shell");
+    fallbackDocument.body.append(frame);
+
+    const canvas = fallbackDocument.createElement("canvas");
+    const title = 'Canvas <script type="text/javascript">window.hacked = true</script>';
+    const detail = "Use <strong>Canvas 2D</strong> support instead.";
+
+    expect(() =>
+      bootstrap({
+        canvasUnavailableFallback: { title, detail },
+        document: fallbackDocument as unknown as Document,
+        findCanvas: () => canvas as unknown as HTMLCanvasElement
+      })
+    ).toThrowError("Canvas 2D is unavailable.");
+
+    const fallback = frame.querySelector(".fallback");
+    const children = fallback === null ? [] : Array.from(fallback.children);
+
+    expect(fallback).not.toBeNull();
+    expect(fallback?.getAttribute("role")).toBe("alert");
+    expect(children).toHaveLength(2);
+    expect(children[0]?.tagName).toBe("H1");
+    expect(children[0]?.textContent).toBe(title);
+    expect(children[1]?.tagName).toBe("P");
+    expect(children[1]?.textContent).toBe(detail);
+    expect(fallbackDocument.querySelector("script")).toBeNull();
+    expect(fallbackDocument.querySelector("strong")).toBeNull();
   });
 
   it("removes the beforeunload listener when disposed", () => {

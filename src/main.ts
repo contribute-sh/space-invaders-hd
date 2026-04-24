@@ -19,13 +19,32 @@ import { createVisibilityPauseController } from "./visibility";
 const FIXED_TIMESTEP_MS = 1000 / 60;
 type RuntimeRenderFlags = Parameters<CanvasRenderer["render"]>[1];
 type KeyboardController = ReturnType<typeof createKeyboardController>;
+type BootstrapDocument = Pick<
+  Document,
+  | "addEventListener"
+  | "removeEventListener"
+  | "createElement"
+  | "hidden"
+  | "querySelector"
+>;
+type FallbackContent = Readonly<{
+  title: string;
+  detail: string;
+}>;
+
+const CANVAS_UNAVAILABLE_FALLBACK: FallbackContent = {
+  title: "Canvas 2D is unavailable in this browser.",
+  detail: "This MVP needs a browser with Canvas 2D support."
+};
 
 export function bootstrap(
   options: {
     beforeUnloadTarget?: Pick<Window, "addEventListener" | "removeEventListener">;
+    canvasUnavailableFallback?: FallbackContent;
     createLoop?: typeof createFixedStepLoop;
     createVisibilityPauseController?: typeof createVisibilityPauseController;
     deriveSfxEvents?: typeof deriveSfxEvents;
+    document?: BootstrapDocument;
     findCanvas?: () => HTMLCanvasElement | null;
     highScoreStore?: ReturnType<typeof createHighScoreStore>;
     initialState?: GameState;
@@ -40,9 +59,16 @@ export function bootstrap(
     visibilityTarget?: Pick<Document, "addEventListener" | "removeEventListener">;
   } = {}
 ) {
-  const resolveHidden = options.isHidden ?? (() => getDefaultDocument().hidden);
+  const getBootstrapDocument = (): BootstrapDocument =>
+    options.document ?? getDefaultDocument();
+  const resolveHidden = options.isHidden ?? (() => getBootstrapDocument().hidden);
   const renderer =
-    options.renderer ?? createRenderer(getRequiredCanvas(options.findCanvas));
+    options.renderer ??
+    createRenderer(
+      getRequiredCanvas(options.findCanvas, getBootstrapDocument),
+      getBootstrapDocument(),
+      options.canvasUnavailableFallback ?? CANVAS_UNAVAILABLE_FALLBACK
+    );
   const keyboard =
     options.keyboard ??
     createKeyboardController(options.keyboardTarget ?? getDefaultWindow());
@@ -54,7 +80,7 @@ export function bootstrap(
   const createVisibilityController =
     options.createVisibilityPauseController ?? createVisibilityPauseController;
   const advanceGameState = options.step ?? step;
-  const visibilityTarget = options.visibilityTarget ?? getDefaultDocument();
+  const visibilityTarget = options.visibilityTarget ?? getBootstrapDocument();
   const beforeUnloadTarget =
     options.beforeUnloadTarget ?? getDefaultWindow();
   let bootstrapping = true;
@@ -164,28 +190,39 @@ export function bootstrap(
   };
 }
 
-function renderFallback(title: string, detail: string): void {
-  const shell = document.querySelector(".frame");
+function renderFallback(
+  documentRef: Pick<BootstrapDocument, "createElement" | "querySelector">,
+  title: string,
+  detail: string
+): void {
+  const shell = documentRef.querySelector<HTMLElement>(".frame");
   if (shell === null) {
     return;
   }
 
-  shell.innerHTML = `
-    <section class="fallback" role="alert">
-      <h1>${title}</h1>
-      <p>${detail}</p>
-    </section>
-  `;
+  const fallback = documentRef.createElement("section");
+  fallback.className = "fallback";
+  fallback.setAttribute("role", "alert");
+
+  const heading = documentRef.createElement("h1");
+  heading.textContent = title;
+
+  const copy = documentRef.createElement("p");
+  copy.textContent = detail;
+
+  fallback.append(heading, copy);
+  shell.replaceChildren(fallback);
 }
 
-function createRenderer(canvasElement: HTMLCanvasElement): CanvasRenderer {
+function createRenderer(
+  canvasElement: HTMLCanvasElement,
+  documentRef: Pick<BootstrapDocument, "createElement" | "querySelector">,
+  fallbackContent: FallbackContent
+): CanvasRenderer {
   try {
     return createCanvasRenderer(canvasElement);
   } catch (error) {
-    renderFallback(
-      "Canvas 2D is unavailable in this browser.",
-      "This MVP needs a browser with Canvas 2D support."
-    );
+    renderFallback(documentRef, fallbackContent.title, fallbackContent.detail);
     throw error;
   }
 }
@@ -211,11 +248,12 @@ function maybeGetWindow(): Window | undefined {
 }
 
 function getRequiredCanvas(
-  findCanvas: (() => HTMLCanvasElement | null) | undefined
+  findCanvas: (() => HTMLCanvasElement | null) | undefined,
+  getDocument: () => Pick<BootstrapDocument, "querySelector">
 ): HTMLCanvasElement {
   const canvas =
     findCanvas === undefined
-      ? getDefaultDocument().querySelector<HTMLCanvasElement>("#game")
+      ? getDocument().querySelector<HTMLCanvasElement>("#game")
       : findCanvas();
 
   if (canvas === null) {
