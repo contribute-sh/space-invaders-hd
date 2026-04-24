@@ -67,6 +67,25 @@ describe("createKeyboardController", () => {
     expect(controller.snapshot().moveX).toBe(0);
   });
 
+  it("cancels symmetric left and right input until one side is released", () => {
+    const target = createTarget();
+    const controller = createKeyboardController(target);
+
+    dispatchKeyDown(target, "ArrowLeft");
+    dispatchKeyDown(target, "ArrowRight");
+
+    expect(controller.snapshot().moveX).toBe(0);
+
+    dispatchKeyUp(target, "ArrowLeft");
+
+    expect(controller.snapshot().moveX).toBe(1);
+
+    dispatchKeyDown(target, "ArrowLeft");
+    dispatchKeyUp(target, "ArrowRight");
+
+    expect(controller.snapshot().moveX).toBe(-1);
+  });
+
   it("clears held ArrowRight, Space, and KeyP input and resets mute gating on blur", () => {
     const target = createTarget();
     const controller = createKeyboardController(target);
