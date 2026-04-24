@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 
+import { SPRITE_DESCRIPTOR_REGISTRY } from "./sprite-data";
 import {
+  EMPTY_PIXEL,
   INVADER_ROW_DESCRIPTORS,
   PLAYER_PROJECTILE_DESCRIPTOR,
   PLAYER_SHIP_DESCRIPTOR,
@@ -67,6 +69,15 @@ function expectPreparedSpriteToMatchDescriptor(
   expect(sprite.width).toBe(firstRow.length * pixelSize);
   expect(sprite.height).toBe(firstFrame.length * pixelSize);
   expect(sprite.sheet.getFrameCount()).toBe(sprite.frameCount);
+}
+
+function countFilledPixels(frame: readonly string[]): number {
+  return frame.reduce(
+    (filledPixelCount, row) =>
+      filledPixelCount +
+      [...row].filter((pixelKey) => pixelKey !== EMPTY_PIXEL).length,
+    0
+  );
 }
 
 describe("createSpriteSheet", () => {
@@ -186,6 +197,51 @@ describe("createSpriteSheet", () => {
     const context = new FakeSpriteContext();
 
     expect(() => spriteSheet.drawFrame(context, 99, 0, 0)).toThrow(RangeError);
+  });
+
+  it("creates a sprite sheet from a descriptor looked up by id in the registry", () => {
+    const descriptor = SPRITE_DESCRIPTOR_REGISTRY["player-projectile"]!;
+    const spriteSheet = createSpriteSheet(descriptor);
+    const context = new FakeSpriteContext();
+
+    spriteSheet.drawFrame(context, 0, 3, 5);
+
+    expect(spriteSheet.getFrameCount()).toBe(descriptor.frames.length);
+    expect(context.fillRectCalls).toHaveLength(
+      countFilledPixels(descriptor.frames[0] ?? [])
+    );
+  });
+});
+
+describe("SPRITE_DESCRIPTOR_REGISTRY", () => {
+  it("keeps every registered descriptor geometrically consistent and palette-safe", () => {
+    expect(Object.values(SPRITE_DESCRIPTOR_REGISTRY)).toHaveLength(
+      SPRITE_DESCRIPTORS.length
+    );
+
+    for (const descriptor of Object.values(SPRITE_DESCRIPTOR_REGISTRY)) {
+      const expectedHeight = descriptor.frames[0]?.length ?? 0;
+      const expectedWidth = descriptor.frames[0]?.[0]?.length ?? 0;
+      const allowedPixelKeys = new Set([
+        EMPTY_PIXEL,
+        ...Object.keys(descriptor.palette)
+      ]);
+
+      expect(expectedHeight).toBeGreaterThan(0);
+      expect(expectedWidth).toBeGreaterThan(0);
+
+      for (const frame of descriptor.frames) {
+        expect(frame).toHaveLength(expectedHeight);
+
+        for (const row of frame) {
+          expect(row).toHaveLength(expectedWidth);
+
+          for (const pixelKey of row) {
+            expect(allowedPixelKeys.has(pixelKey)).toBe(true);
+          }
+        }
+      }
+    }
   });
 });
 
