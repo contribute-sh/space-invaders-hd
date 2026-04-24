@@ -7,6 +7,17 @@ import { PLAYER_SHIP_DESCRIPTOR } from "./sprites";
 const HUD_TOP = 18;
 const HUD_HEIGHT = 68;
 const HUD_SHIP_COLORS = new Set(Object.values(PLAYER_SHIP_DESCRIPTOR.palette));
+const PLAYER_INVULNERABILITY_HALO_COLOR = "rgba(123, 229, 255, 0.22)";
+const PLAYER_INVULNERABILITY_HALO_MARGIN = 12;
+const PLAYER_SHIP_PIXEL_COUNT = PLAYER_SHIP_DESCRIPTOR.frames.reduce(
+  (frameCount, frame) =>
+    frameCount +
+    frame.reduce(
+      (rowCount, row) => rowCount + [...row].filter((pixel) => pixel !== ".").length,
+      0
+    ),
+  0
+);
 
 type FillRectCall = {
   fillStyle: string | CanvasGradient | CanvasPattern;
@@ -119,6 +130,35 @@ function countClusters(values: number[]): number {
   return clusterCount;
 }
 
+function getPlayerShipFillRects(
+  context: FakeCanvasContext,
+  state: ReturnType<typeof createPlayingState>
+): FillRectCall[] {
+  return context.fillRectCalls.filter(
+    (call) =>
+      typeof call.fillStyle === "string" &&
+      HUD_SHIP_COLORS.has(call.fillStyle) &&
+      call.x >= state.player.x &&
+      call.x < state.player.x + state.player.width &&
+      call.y >= state.player.y &&
+      call.y < state.player.y + state.player.height
+  );
+}
+
+function findPlayerInvulnerabilityHalo(
+  context: FakeCanvasContext,
+  state: ReturnType<typeof createPlayingState>
+): FillRectCall | undefined {
+  return context.fillRectCalls.find(
+    (call) =>
+      call.fillStyle === PLAYER_INVULNERABILITY_HALO_COLOR &&
+      call.x === state.player.x - PLAYER_INVULNERABILITY_HALO_MARGIN &&
+      call.y === state.player.y - PLAYER_INVULNERABILITY_HALO_MARGIN &&
+      call.width === state.player.width + PLAYER_INVULNERABILITY_HALO_MARGIN * 2 &&
+      call.height === state.player.height + PLAYER_INVULNERABILITY_HALO_MARGIN * 2
+  );
+}
+
 describe("createCanvasRenderer", () => {
   afterEach(() => {
     vi.unstubAllGlobals();
@@ -203,5 +243,57 @@ describe("createCanvasRenderer", () => {
           call.y < HUD_TOP + HUD_HEIGHT
       )
     ).toBe(true);
+  });
+
+  it("renders the invulnerability halo and blinks the ship off on deterministic off frames", () => {
+    vi.stubGlobal("window", { devicePixelRatio: 1 });
+
+    const context = new FakeCanvasContext();
+    const canvas = createFakeCanvas(context);
+    const renderer = createCanvasRenderer(canvas);
+    const state = {
+      ...createPlayingState({ elapsedMs: 180 }),
+      invaders: [],
+      projectiles: [],
+      player: {
+        ...createPlayingState().player,
+        invulnerableUntilMs: 360
+      }
+    };
+
+    renderer.render(state, {
+      bootstrapping: false,
+      highScore: 0,
+      muted: false
+    });
+
+    expect(findPlayerInvulnerabilityHalo(context, state)).toBeDefined();
+    expect(getPlayerShipFillRects(context, state)).toHaveLength(0);
+  });
+
+  it("renders the normal ship without invulnerability halo artifacts once the timer expires", () => {
+    vi.stubGlobal("window", { devicePixelRatio: 1 });
+
+    const context = new FakeCanvasContext();
+    const canvas = createFakeCanvas(context);
+    const renderer = createCanvasRenderer(canvas);
+    const state = {
+      ...createPlayingState({ elapsedMs: 360 }),
+      invaders: [],
+      projectiles: [],
+      player: {
+        ...createPlayingState().player,
+        invulnerableUntilMs: 360
+      }
+    };
+
+    renderer.render(state, {
+      bootstrapping: false,
+      highScore: 0,
+      muted: false
+    });
+
+    expect(findPlayerInvulnerabilityHalo(context, state)).toBeUndefined();
+    expect(getPlayerShipFillRects(context, state)).toHaveLength(PLAYER_SHIP_PIXEL_COUNT);
   });
 });
