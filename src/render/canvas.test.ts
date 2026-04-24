@@ -10,14 +10,8 @@ const HUD_HEIGHT = 68;
 const HUD_SHIP_COLORS = new Set(Object.values(PLAYER_SHIP_DESCRIPTOR.palette));
 const PLAYER_INVULNERABILITY_HALO_COLOR = "rgba(123, 229, 255, 0.22)";
 const PLAYER_INVULNERABILITY_HALO_MARGIN = 12;
-const PLAYER_SHIP_PIXEL_COUNT = PLAYER_SHIP_DESCRIPTOR.frames.reduce(
-  (frameCount, frame) =>
-    frameCount +
-    frame.reduce(
-      (rowCount, row) => rowCount + [...row].filter((pixel) => pixel !== ".").length,
-      0
-    ),
-  0
+const PLAYER_SHIP_PIXEL_COUNT = countFilledPixels(
+  PLAYER_SHIP_DESCRIPTOR.frames[0] ?? []
 );
 
 type FillRectCall = {
@@ -160,6 +154,13 @@ function countClusters(values: number[]): number {
   }
 
   return clusterCount;
+}
+
+function countFilledPixels(frame: readonly string[]): number {
+  return frame.reduce(
+    (rowCount, row) => rowCount + [...row].filter((pixel) => pixel !== ".").length,
+    0
+  );
 }
 
 function getPlayerShipFillRects(
@@ -379,6 +380,39 @@ describe("createCanvasRenderer", () => {
 
     expect(findPlayerInvulnerabilityHalo(context, state)).toBeUndefined();
     expect(getPlayerShipFillRects(context, state)).toHaveLength(PLAYER_SHIP_PIXEL_COUNT);
+  });
+
+  it("renders a distinct player sprite frame while the shoot animation is active", () => {
+    vi.stubGlobal("window", { devicePixelRatio: 1 });
+
+    const idleContext = new FakeCanvasContext();
+    const firingContext = new FakeCanvasContext();
+    const idleRenderer = createCanvasRenderer(createFakeCanvas(idleContext));
+    const firingRenderer = createCanvasRenderer(createFakeCanvas(firingContext));
+    const baseState = {
+      ...createPlayingState(),
+      invaders: [],
+      projectiles: []
+    };
+    const firingState = {
+      ...baseState,
+      playerShootFrame: 60
+    };
+
+    idleRenderer.render(baseState, {
+      bootstrapping: false,
+      highScore: 0,
+      muted: false
+    });
+    firingRenderer.render(firingState, {
+      bootstrapping: false,
+      highScore: 0,
+      muted: false
+    });
+
+    expect(getPlayerShipFillRects(idleContext, baseState)).not.toEqual(
+      getPlayerShipFillRects(firingContext, firingState)
+    );
   });
 
   it("renders the shared control footer", () => {

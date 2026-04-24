@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
 
-import { SPRITE_DESCRIPTOR_REGISTRY } from "./sprite-data";
 import {
   EMPTY_PIXEL,
   INVADER_ROW_DESCRIPTORS,
   PLAYER_PROJECTILE_DESCRIPTOR,
   PLAYER_SHIP_DESCRIPTOR,
+  SPRITE_DESCRIPTOR_REGISTRY,
   SPRITE_DESCRIPTORS,
   createSpriteSheet,
   getSprite,
@@ -85,7 +85,10 @@ describe("createSpriteSheet", () => {
     expect(SPRITE_DESCRIPTORS).toHaveLength(7);
     expect(INVADER_ROW_DESCRIPTORS).toHaveLength(5);
 
-    expect(createSpriteSheet(PLAYER_SHIP_DESCRIPTOR).getFrameCount()).toBe(1);
+    expect(createSpriteSheet(PLAYER_SHIP_DESCRIPTOR).getFrameCount()).toBe(2);
+    expect(PLAYER_SHIP_DESCRIPTOR.frames[1]).not.toEqual(
+      PLAYER_SHIP_DESCRIPTOR.frames[0]
+    );
     expect(createSpriteSheet(PLAYER_PROJECTILE_DESCRIPTOR).getFrameCount()).toBe(1);
 
     for (const descriptor of INVADER_ROW_DESCRIPTORS) {

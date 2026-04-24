@@ -1,7 +1,7 @@
 import {
   INVADER_ROW_DESCRIPTORS,
-  PLAYER_SHIP_DESCRIPTOR,
-  SPRITE_DESCRIPTOR_REGISTRY
+  PLAYER_PROJECTILE_DESCRIPTOR,
+  PLAYER_SHIP_DESCRIPTOR as BASE_PLAYER_SHIP_DESCRIPTOR
 } from "./sprite-data";
 
 export type SpriteFrame = readonly string[];
@@ -37,12 +37,40 @@ export type PreparedSprite = {
 
 export const EMPTY_PIXEL = ".";
 
-export {
-  INVADER_ROW_DESCRIPTORS,
-  PLAYER_PROJECTILE_DESCRIPTOR,
+const PLAYER_IDLE_FRAME = BASE_PLAYER_SHIP_DESCRIPTOR.frames[0];
+
+if (PLAYER_IDLE_FRAME === undefined) {
+  throw new Error('Sprite "player-ship" must include an idle frame.');
+}
+
+const PLAYER_SHIP_FIRE_FRAME = [
+  ".........b.........",
+  "........cbc........",
+  ".......ccccc.......",
+  "......cccbccc......",
+  ".....ccbbbbbcc.....",
+  "...ccbbbbbbbbbcc...",
+  "..ccbbbbbbbbbbbcc.."
+] as const satisfies SpriteFrame;
+
+export { INVADER_ROW_DESCRIPTORS, PLAYER_PROJECTILE_DESCRIPTOR };
+
+export const PLAYER_SHIP_DESCRIPTOR = {
+  ...BASE_PLAYER_SHIP_DESCRIPTOR,
+  frames: [PLAYER_IDLE_FRAME, PLAYER_SHIP_FIRE_FRAME]
+} satisfies SpriteDescriptor;
+
+export const SPRITE_DESCRIPTORS = [
   PLAYER_SHIP_DESCRIPTOR,
-  SPRITE_DESCRIPTORS
-} from "./sprite-data";
+  ...INVADER_ROW_DESCRIPTORS,
+  PLAYER_PROJECTILE_DESCRIPTOR
+] as const satisfies readonly SpriteDescriptor[];
+
+type SpriteDescriptorId = (typeof SPRITE_DESCRIPTORS)[number]["id"];
+
+export const SPRITE_DESCRIPTOR_REGISTRY = Object.fromEntries(
+  SPRITE_DESCRIPTORS.map((descriptor) => [descriptor.id, descriptor] as const)
+) as Readonly<Record<SpriteDescriptorId, SpriteDescriptor>>;
 
 const HUD_PLAYER_SHIP_DESCRIPTOR = {
   ...PLAYER_SHIP_DESCRIPTOR,
@@ -60,11 +88,9 @@ const INVADER_ROW_SPRITES = Object.fromEntries(
 >;
 
 const SPRITE_REGISTRY = {
-  "player-ship": prepareSprite(SPRITE_DESCRIPTOR_REGISTRY["player-ship"]!),
+  "player-ship": prepareSprite(PLAYER_SHIP_DESCRIPTOR),
   "hud-player-ship": prepareSprite(HUD_PLAYER_SHIP_DESCRIPTOR),
-  "player-projectile": prepareSprite(
-    SPRITE_DESCRIPTOR_REGISTRY["player-projectile"]!
-  ),
+  "player-projectile": prepareSprite(PLAYER_PROJECTILE_DESCRIPTOR),
   ...INVADER_ROW_SPRITES
 } satisfies Record<string, PreparedSprite>;
 
