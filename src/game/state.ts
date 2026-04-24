@@ -163,8 +163,55 @@ export const EMPTY_INPUT: Input = {
   mutePressed: false
 };
 
+type KeysEqual<A extends PropertyKey, B extends PropertyKey> =
+  [Exclude<A, B>, Exclude<B, A>] extends [never, never] ? true : false;
+
+function defineInputKeys<const T extends readonly (keyof Input)[]>(
+  keys: KeysEqual<keyof Input, T[number]> extends true ? T : never
+): T {
+  return keys;
+}
+
+const INPUT_KEYS = defineInputKeys([
+  "moveX",
+  "firePressed",
+  "pausePressed",
+  "fireHeld",
+  "pauseHeld",
+  "mutePressed"
+] as const);
+
 const ROW_POINTS = [50, 40, 30, 20, 10] as const;
 const FORMATION_SPEED_KILL_MULTIPLIER = 2.7;
+
+function assignInputKey<K extends keyof Input>(
+  target: Input,
+  input: Input,
+  key: K
+): void {
+  target[key] = input[key];
+}
+
+export function cloneInput(input: Input): Input {
+  const clonedInput: Input = { ...EMPTY_INPUT };
+
+  assignInput(clonedInput, input);
+
+  return clonedInput;
+}
+
+export function assignInput(target: Input, input: Input): void {
+  for (const key of INPUT_KEYS) {
+    assignInputKey(target, input, key);
+  }
+}
+
+export function createPauseInput(): Input {
+  return {
+    ...EMPTY_INPUT,
+    pausePressed: true
+  };
+}
 
 export function createInitialGameState(): GameState {
   return createGameState({ phase: "start" });

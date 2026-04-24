@@ -1,10 +1,19 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  EMPTY_INPUT,
   FORMATION_SPEED_BASE,
   FORMATION_SPEED_MAX,
-  getFormationSpeed
+  assignInput,
+  cloneInput,
+  createPauseInput,
+  getFormationSpeed,
+  type Input
 } from "./state";
+
+function getInputKeys(): Array<keyof Input> {
+  return Object.keys(EMPTY_INPUT) as Array<keyof Input>;
+}
 
 describe("getFormationSpeed", () => {
   it("returns the wave start speed when invaderCount exceeds totalInvaders", () => {
@@ -39,5 +48,49 @@ describe("getFormationSpeed", () => {
     expect(getFormationSpeed(5, waveStartSpeed, 10)).toBe(
       waveStartSpeed + (FORMATION_SPEED_MAX - waveStartSpeed) / 2
     );
+  });
+});
+
+describe("input helpers", () => {
+  it("round-trips every EMPTY_INPUT field through cloneInput", () => {
+    const clonedInput = cloneInput(EMPTY_INPUT);
+
+    expect(clonedInput).toEqual(EMPTY_INPUT);
+
+    for (const key of getInputKeys()) {
+      expect(clonedInput[key]).toEqual(EMPTY_INPUT[key]);
+    }
+  });
+
+  it("copies every Input field through assignInput", () => {
+    const target = cloneInput(EMPTY_INPUT);
+    const source: Input = {
+      moveX: 1,
+      firePressed: true,
+      pausePressed: true,
+      fireHeld: true,
+      pauseHeld: true,
+      mutePressed: true
+    };
+
+    assignInput(target, source);
+
+    for (const key of getInputKeys()) {
+      expect(target[key]).toBe(source[key]);
+    }
+  });
+
+  it("creates a pause-only input from EMPTY_INPUT defaults", () => {
+    const pauseInput = createPauseInput();
+
+    expect(pauseInput.pausePressed).toBe(true);
+
+    for (const key of getInputKeys()) {
+      if (key === "pausePressed") {
+        continue;
+      }
+
+      expect(pauseInput[key]).toBe(EMPTY_INPUT[key]);
+    }
   });
 });
