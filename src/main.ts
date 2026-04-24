@@ -1,6 +1,7 @@
-import { deriveSfxEvents } from "./audio/events";
+import { deriveSfxEvents, mapGameEventsToSfxEvents } from "./audio/events";
 import { createMuteStore } from "./audio/mute";
 import { createSfxController } from "./audio/sfx";
+import { deriveGameEvents, type GameEvent } from "./game/events";
 import {
   EMPTY_INPUT,
   createInitialGameState,
@@ -53,7 +54,6 @@ export function bootstrap(
   const createVisibilityController =
     options.createVisibilityPauseController ?? createVisibilityPauseController;
   const advanceGameState = options.step ?? step;
-  const deriveAudioEvents = options.deriveSfxEvents ?? deriveSfxEvents;
   const visibilityTarget = options.visibilityTarget ?? getDefaultDocument();
   const beforeUnloadTarget =
     options.beforeUnloadTarget ?? getDefaultWindow();
@@ -72,17 +72,28 @@ export function bootstrap(
     return frameInput;
   };
 
+  const deriveTransitionAudioEvents = (
+    previousState: GameState,
+    nextState: GameState
+  ) => {
+    const gameEvents = deriveGameEvents(previousState, nextState);
+
+    recordHighScoreFromEvents(highScoreStore, gameEvents);
+
+    return options.deriveSfxEvents === undefined
+      ? mapGameEventsToSfxEvents(gameEvents)
+      : options.deriveSfxEvents(previousState, nextState);
+  };
+
   const runtime = createGameRuntime({
-    deriveSfxEvents: deriveAudioEvents,
+    deriveSfxEvents: deriveTransitionAudioEvents,
     initialState: options.initialState ?? createInitialGameState(),
     muteStore,
     readHighScore: () => highScoreStore.getHighScore(),
     readInput,
     sfxController: sfx,
     step: (state, dtMs, input) => advanceGameState(state, dtMs, cloneInput(input)),
-    writeHighScore: (score) => {
-      highScoreStore.recordScore(score);
-    }
+    writeHighScore: () => undefined
   });
 
   const renderRuntime = (): void => {
@@ -235,6 +246,17 @@ function createPauseInput(): Input {
     ...EMPTY_INPUT,
     pausePressed: true
   };
+}
+
+function recordHighScoreFromEvents(
+  highScoreStore: Pick<ReturnType<typeof createHighScoreStore>, "recordScore">,
+  events: readonly GameEvent[]
+): void {
+  for (const event of events) {
+    if (event.type === "scoreChanged") {
+      highScoreStore.recordScore(event.nextScore);
+    }
+  }
 }
 
 if (typeof window !== "undefined" && typeof document !== "undefined") {
