@@ -14,6 +14,11 @@ type HarnessOptions = {
   initialState?: GameState;
   step?: (state: GameState, dtMs: number, input: Input) => GameState;
 };
+type ListenerRecord = {
+  listener: EventListenerOrEventListenerObject | null;
+  type: string;
+};
+
 class FakeStorage implements Storage {
   private readonly entries = new Map<string, string>();
   constructor(seed: Record<string, string>) { for (const [key, value] of Object.entries(seed)) this.entries.set(key, value); }
@@ -24,6 +29,20 @@ class FakeStorage implements Storage {
   removeItem(key: string): void { this.entries.delete(key); }
   setItem(key: string, value: string): void { this.entries.set(key, value); }
 }
+
+class FakeBeforeUnloadTarget {
+  readonly addedListeners: ListenerRecord[] = [];
+  readonly removedListeners: ListenerRecord[] = [];
+
+  addEventListener(type: string, listener: EventListenerOrEventListenerObject | null): void {
+    this.addedListeners.push({ type, listener });
+  }
+
+  removeEventListener(type: string, listener: EventListenerOrEventListenerObject | null): void {
+    this.removedListeners.push({ type, listener });
+  }
+}
+
 function createInput(input: Partial<Input> = {}): Input { return { ...EMPTY_INPUT, ...input }; }
 function createHarness(options: HarnessOptions = {}) {
   const storage = new FakeStorage({
@@ -56,7 +75,7 @@ function createHarness(options: HarnessOptions = {}) {
     options.step ??
     ((state: GameState, dtMs: number, input: Input) => { void dtMs; void input; return state; });
   bootstrap({
-    beforeUnloadTarget: { addEventListener: () => {} },
+    beforeUnloadTarget: { addEventListener: () => {}, removeEventListener: () => {} },
     createLoop: (config) => { loop = config; return { start: () => {}, stop: () => {} }; },
     createVisibilityPauseController: ({ onHide: hide }) => { onHide = hide; return { dispose: () => {} }; },
     deriveSfxEvents: options.deriveSfxEvents ?? (() => []),
@@ -164,5 +183,39 @@ describe("bootstrap", () => {
   });
   it("throws when the game canvas is missing", () => {
     expect(() => bootstrap({ findCanvas: () => null })).toThrowError("Game canvas not found.");
+  });
+
+  it("removes the beforeunload listener when disposed", () => {
+    const beforeUnloadTarget = new FakeBeforeUnloadTarget();
+    const { dispose } = bootstrap({
+      beforeUnloadTarget: beforeUnloadTarget as Pick<
+        Window,
+        "addEventListener" | "removeEventListener"
+      >,
+      createLoop: () => ({ start: () => {}, stop: () => {} }),
+      createVisibilityPauseController: () => ({ dispose: () => {} }),
+      findCanvas: () => document.createElement("canvas"),
+      isHidden: () => false,
+      keyboard: { dispose: () => {}, snapshot: () => EMPTY_INPUT },
+      renderer: { render: () => {} },
+      sfx: {
+        arm: async () => {},
+        getStatus: () => "idle",
+        play: () => {},
+        setMuted: () => {}
+      },
+      visibilityTarget: { addEventListener: () => {}, removeEventListener: () => {} }
+    });
+
+    dispose();
+    dispose();
+
+    expect(beforeUnloadTarget.addedListeners).toHaveLength(1);
+    expect(beforeUnloadTarget.removedListeners).toHaveLength(1);
+    expect(beforeUnloadTarget.addedListeners[0]?.type).toBe("beforeunload");
+    expect(beforeUnloadTarget.removedListeners[0]?.type).toBe("beforeunload");
+    expect(beforeUnloadTarget.removedListeners[0]?.listener).toBe(
+      beforeUnloadTarget.addedListeners[0]?.listener
+    );
   });
 });
