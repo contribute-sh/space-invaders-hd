@@ -20,7 +20,7 @@ type KeyboardController = ReturnType<typeof createKeyboardController>;
 
 export function bootstrap(
   options: {
-    beforeUnloadTarget?: Pick<Window, "addEventListener">;
+    beforeUnloadTarget?: Pick<Window, "addEventListener" | "removeEventListener">;
     createLoop?: typeof createFixedStepLoop;
     createVisibilityPauseController?: typeof createVisibilityPauseController;
     deriveSfxEvents?: typeof deriveSfxEvents;
@@ -160,13 +160,26 @@ export function bootstrap(
     isHidden: resolveHidden
   });
 
-  const dispose = (): void => {
+  let disposed = false;
+  let dispose = (): void => {};
+
+  const onBeforeUnload = (): void => {
+    dispose();
+  };
+
+  dispose = (): void => {
+    if (disposed) {
+      return;
+    }
+
+    disposed = true;
+    beforeUnloadTarget.removeEventListener("beforeunload", onBeforeUnload);
     loop.stop();
     keyboard.dispose();
     visibilityPauseController.dispose();
   };
 
-  beforeUnloadTarget.addEventListener("beforeunload", dispose);
+  beforeUnloadTarget.addEventListener("beforeunload", onBeforeUnload);
   loop.start();
 
   return {
