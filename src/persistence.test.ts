@@ -150,21 +150,57 @@ describe("createHighScoreStore", () => {
     }
   );
 
-  it("swallows getItem failures", () => {
-    const storage = new FakeStorage();
-    storage.throwOnGet = true;
-    const store = createHighScoreStore(storage);
+  describe("when storage throws", () => {
+    it("returns 0 when reading the stored high score throws", () => {
+      const storage = new FakeStorage();
+      storage.throwOnGet = true;
+      const store = createHighScoreStore(storage);
 
-    expect(store.getHighScore()).toBe(0);
-  });
+      expect(store.getHighScore()).toBe(0);
+    });
 
-  it("swallows setItem failures", () => {
-    const storage = new FakeStorage();
-    storage.throwOnSet = true;
-    const store = createHighScoreStore(storage);
+    it("keeps the in-memory high score when writing the stored high score throws", () => {
+      const storage = new FakeStorage();
+      storage.seed(HIGH_SCORE_STORAGE_KEY, "220");
+      storage.throwOnSet = true;
+      const store = createHighScoreStore(storage);
 
-    expect(store.recordScore(400)).toBe(400);
-    expect(store.getHighScore()).toBe(400);
-    expect(storage.key(0)).toBeNull();
+      expect(store.recordScore(360)).toBe(360);
+      expect(store.getHighScore()).toBe(360);
+      expect(storage.getItem(HIGH_SCORE_STORAGE_KEY)).toBe("220");
+    });
+
+    it("falls back to memory storage when localStorage access throws", () => {
+      const originalLocalStorageDescriptor = Object.getOwnPropertyDescriptor(
+        globalThis,
+        "localStorage"
+      );
+
+      Object.defineProperty(globalThis, "localStorage", {
+        configurable: true,
+        get() {
+          throw new Error("localStorage unavailable");
+        }
+      });
+
+      try {
+        const store = createHighScoreStore();
+        const initialHighScore = store.getHighScore();
+        const nextHighScore = initialHighScore + 1;
+
+        expect(store.recordScore(nextHighScore)).toBe(nextHighScore);
+        expect(store.getHighScore()).toBe(nextHighScore);
+      } finally {
+        if (originalLocalStorageDescriptor) {
+          Object.defineProperty(
+            globalThis,
+            "localStorage",
+            originalLocalStorageDescriptor
+          );
+        } else {
+          Reflect.deleteProperty(globalThis, "localStorage");
+        }
+      }
+    });
   });
 });
