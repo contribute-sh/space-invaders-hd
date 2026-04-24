@@ -29,12 +29,16 @@ function createTarget(): Window {
   return target as Window;
 }
 
-function dispatchKeyDown(target: Window, code: string): void {
-  target.dispatchEvent(new KeyboardEvent("keydown", { code }));
+function dispatchKeyDown(target: Window, code: string): KeyboardEvent {
+  const event = new KeyboardEvent("keydown", { code, cancelable: true });
+  target.dispatchEvent(event);
+  return event;
 }
 
-function dispatchKeyUp(target: Window, code: string): void {
-  target.dispatchEvent(new KeyboardEvent("keyup", { code }));
+function dispatchKeyUp(target: Window, code: string): KeyboardEvent {
+  const event = new KeyboardEvent("keyup", { code, cancelable: true });
+  target.dispatchEvent(event);
+  return event;
 }
 
 function dispatchBlur(target: Window): void {
@@ -266,6 +270,48 @@ describe("createKeyboardController", () => {
     expect(firstSnapshot.mutePressed).toBe(true);
     expect(secondSnapshot.mutePressed).toBe(false);
     expect(rearmedSnapshot.mutePressed).toBe(true);
+  });
+
+  describe("preventDefault behavior", () => {
+    const recognizedCodes = [
+      "ArrowLeft",
+      "ArrowRight",
+      "Space",
+      "KeyP",
+      "KeyM"
+    ] as const;
+
+    for (const code of recognizedCodes) {
+      it(`prevents default for ${code} on keydown and keyup`, () => {
+        const target = createTarget();
+        const controller = createKeyboardController(target);
+
+        try {
+          const keyDownEvent = dispatchKeyDown(target, code);
+          const keyUpEvent = dispatchKeyUp(target, code);
+
+          expect(keyDownEvent.defaultPrevented).toBe(true);
+          expect(keyUpEvent.defaultPrevented).toBe(true);
+        } finally {
+          controller.dispose();
+        }
+      });
+    }
+
+    it("does not prevent default for unrecognized keys on keydown and keyup", () => {
+      const target = createTarget();
+      const controller = createKeyboardController(target);
+
+      try {
+        const keyDownEvent = dispatchKeyDown(target, "Tab");
+        const keyUpEvent = dispatchKeyUp(target, "Tab");
+
+        expect(keyDownEvent.defaultPrevented).toBe(false);
+        expect(keyUpEvent.defaultPrevented).toBe(false);
+      } finally {
+        controller.dispose();
+      }
+    });
   });
 
   it("removes the blur listener on dispose", () => {
