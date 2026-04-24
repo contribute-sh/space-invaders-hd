@@ -53,6 +53,25 @@ class FakeMuteStore {
   }
 }
 
+class FakeHighScoreWriter {
+  private highScore: number;
+
+  public readonly writeCalls: number[] = [];
+
+  constructor(initialHighScore = 0) {
+    this.highScore = initialHighScore;
+  }
+
+  readHighScore(): number {
+    return this.highScore;
+  }
+
+  writeHighScore(score: number): void {
+    this.writeCalls.push(score);
+    this.highScore = Math.max(this.highScore, score);
+  }
+}
+
 type RuntimeHarness = {
   queueInput: (input?: Partial<Input>) => void;
   runtime: GameRuntime;
@@ -76,16 +95,15 @@ type RuntimeHarnessOptions = {
 function createHarness(options: RuntimeHarnessOptions = {}): RuntimeHarness {
   const sfxController = new FakeSfxController();
   const muteStore = new FakeMuteStore(options.initialMuted);
+  const highScoreWriter = new FakeHighScoreWriter(options.initialHighScore);
   const stepCalls: Array<{ dtMs: number; input: Input }> = [];
-  const writeHighScoreCalls: number[] = [];
-  let highScore = options.initialHighScore ?? 0;
   let queuedInput = createInput();
 
   const runtime = createGameRuntime({
     deriveSfxEvents: options.deriveEvents ?? (() => []),
     initialState: options.initialState ?? createInitialGameState(),
     muteStore,
-    readHighScore: () => highScore,
+    readHighScore: () => highScoreWriter.readHighScore(),
     readInput: () => {
       const snapshot = queuedInput;
       queuedInput = createInput();
@@ -97,10 +115,7 @@ function createHarness(options: RuntimeHarnessOptions = {}): RuntimeHarness {
 
       return options.step === undefined ? state : options.step(state, dtMs, input);
     },
-    writeHighScore: (score) => {
-      writeHighScoreCalls.push(score);
-      highScore = score;
-    }
+    writeHighScore: (score) => highScoreWriter.writeHighScore(score)
   });
 
   return {
@@ -110,7 +125,7 @@ function createHarness(options: RuntimeHarnessOptions = {}): RuntimeHarness {
     runtime,
     sfxController,
     stepCalls,
-    writeHighScoreCalls,
+    writeHighScoreCalls: highScoreWriter.writeCalls,
     muteStore
   };
 }
@@ -159,32 +174,91 @@ describe("createGameRuntime", () => {
     expect(harness.sfxController.setMutedCalls).toEqual([false, true]);
   });
 
-  it("records the max of the stored and final score once per game-over transition", () => {
-    const finalScore = 220;
-    const storedHighScore = 260;
+  it("writes the updated score each time play increases it", () => {
+    let stepIndex = 0;
     const harness = createHarness({
-      initialHighScore: storedHighScore,
-      initialState: createPlayingState(),
-      step: (state) =>
-        state.phase === "playing"
-          ? {
-              ...state,
-              phase: "gameOver",
-              hud: {
-                ...state.hud,
-                score: finalScore
-              }
-            }
-          : {
-              ...state,
-              frame: state.frame + 1
-            }
+      initialHighScore: 260,
+      initialState: createPlayingState({ score: 200 }),
+      step: (state) => {
+        stepIndex += 1;
+
+        return {
+          ...state,
+          frame: state.frame + 1,
+          hud: {
+            ...state.hud,
+            score: stepIndex === 1 ? 220 : 250
+          }
+        };
+      }
     });
 
     harness.runtime.onStep({ dtMs: 16, firstStepOfFrame: true });
     harness.runtime.onStep({ dtMs: 16, firstStepOfFrame: true });
 
-    expect(harness.writeHighScoreCalls).toEqual([storedHighScore]);
+    expect(harness.writeHighScoreCalls).toEqual([220, 250]);
+  });
+
+  it("does not write when the score is unchanged", () => {
+    const harness = createHarness({
+      initialState: createPlayingState({ score: 120 }),
+      step: (state) => ({
+        ...state,
+        frame: state.frame + 1
+      })
+    });
+
+    harness.runtime.onStep({ dtMs: 16, firstStepOfFrame: true });
+
+    expect(harness.writeHighScoreCalls).toEqual([]);
+  });
+
+  it("does not write for non-score events such as shooting or mute toggles", () => {
+    const initialState = createPlayingState({ score: 90 });
+    const harness = createHarness({
+      initialState,
+      step: () => withPlayerProjectileCount(initialState, 1)
+    });
+
+    harness.queueInput({ firePressed: true, mutePressed: true });
+    harness.runtime.onRender();
+    harness.runtime.onStep({ dtMs: 16, firstStepOfFrame: true });
+
+    expect(harness.muteStore.isMuted()).toBe(true);
+    expect(harness.writeHighScoreCalls).toEqual([]);
+  });
+
+  it("does not duplicate a write at the game-over boundary when score is unchanged", () => {
+    let stepIndex = 0;
+    const harness = createHarness({
+      initialState: createPlayingState({ score: 100 }),
+      step: (state) => {
+        stepIndex += 1;
+
+        if (stepIndex === 1) {
+          return {
+            ...state,
+            frame: state.frame + 1,
+            phase: "lifeLost",
+            hud: {
+              ...state.hud,
+              score: 150
+            }
+          };
+        }
+
+        return {
+          ...state,
+          frame: state.frame + 1,
+          phase: "gameOver"
+        };
+      }
+    });
+
+    harness.runtime.onStep({ dtMs: 16, firstStepOfFrame: true });
+    harness.runtime.onStep({ dtMs: 16, firstStepOfFrame: true });
+
+    expect(harness.writeHighScoreCalls).toEqual([150]);
   });
 
   it("dispatches each derived event once across multiple fixed sub-steps in a frame", () => {
