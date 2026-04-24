@@ -1,5 +1,8 @@
+/// <reference types="vite/client" />
+
 import { describe, expect, it } from "vitest";
 
+import stateSource from "./state?raw";
 import {
   EMPTY_INPUT,
   FORMATION_SPEED_BASE,
@@ -16,6 +19,24 @@ import {
   type Invader,
   type Input
 } from "./state";
+
+const formationSpeedKillMultiplierMatch = stateSource.match(
+  /const FORMATION_SPEED_KILL_MULTIPLIER = ([0-9.]+);/
+);
+
+if (!formationSpeedKillMultiplierMatch) {
+  throw new Error("FORMATION_SPEED_KILL_MULTIPLIER not found in state.ts");
+}
+
+const [, formationSpeedKillMultiplierText] = formationSpeedKillMultiplierMatch;
+
+if (!formationSpeedKillMultiplierText) {
+  throw new Error("FORMATION_SPEED_KILL_MULTIPLIER value not found in state.ts");
+}
+
+const FORMATION_SPEED_KILL_MULTIPLIER = Number.parseFloat(
+  formationSpeedKillMultiplierText
+);
 
 function getInputKeys(): Array<keyof Input> {
   return Object.keys(EMPTY_INPUT) as Array<keyof Input>;
@@ -54,6 +75,51 @@ describe("getFormationSpeed", () => {
     expect(getFormationSpeed(5, waveStartSpeed, 10)).toBe(
       waveStartSpeed + (FORMATION_SPEED_MAX - waveStartSpeed) / 2
     );
+  });
+
+  it("returns the wave start speed when all invaders are still alive", () => {
+    const totalInvaders = 10;
+    const waveStartSpeed = FORMATION_SPEED_BASE;
+
+    expect(
+      getFormationSpeed(totalInvaders, waveStartSpeed, totalInvaders)
+    ).toBe(waveStartSpeed);
+  });
+
+  it("applies the kill multiplier for a cleared formation below the cap", () => {
+    const waveStartSpeed = FORMATION_SPEED_BASE;
+
+    expect(getFormationSpeed(0, waveStartSpeed, 10)).toBeCloseTo(
+      waveStartSpeed * FORMATION_SPEED_KILL_MULTIPLIER
+    );
+  });
+
+  it("clamps a cleared formation to FORMATION_SPEED_MAX when the multiplied speed exceeds the cap", () => {
+    expect(getFormationSpeed(0, FORMATION_SPEED_MAX * 2, 10)).toBe(
+      FORMATION_SPEED_MAX
+    );
+  });
+
+  it("interpolates halfway between the wave start speed and kill-multiplied speed when the formation is half cleared", () => {
+    const waveStartSpeed = FORMATION_SPEED_BASE;
+    const waveMaxSpeed =
+      waveStartSpeed * FORMATION_SPEED_KILL_MULTIPLIER;
+
+    expect(getFormationSpeed(5, waveStartSpeed, 10)).toBeCloseTo(
+      waveStartSpeed + (waveMaxSpeed - waveStartSpeed) / 2
+    );
+  });
+
+  it("does not decrease as invaderCount drops", () => {
+    const waveStartSpeed = FORMATION_SPEED_BASE;
+    let previousSpeed = -Infinity;
+
+    for (const invaderCount of [10, 8, 5, 2, 0]) {
+      const speed = getFormationSpeed(invaderCount, waveStartSpeed, 10);
+
+      expect(speed).toBeGreaterThanOrEqual(previousSpeed);
+      previousSpeed = speed;
+    }
   });
 });
 
