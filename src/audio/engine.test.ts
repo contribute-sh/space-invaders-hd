@@ -207,6 +207,36 @@ describe("createAudioEngine", () => {
     expect(engine.getStatus()).toBe("muted");
   });
 
+  it("retries arming after an initial context creation failure", async () => {
+    const createContext = vi
+      .fn<() => MockAudioContext>()
+      .mockImplementationOnce(() => {
+        throw new Error("AudioContext unavailable");
+      })
+      .mockImplementation(() => harness.createContext());
+    const engine = createAudioEngine({ createContext });
+
+    await engine.arm();
+
+    expect(engine.getStatus()).not.toBe("ready");
+    expect(harness.contexts).toHaveLength(0);
+
+    await engine.arm();
+
+    expect(engine.getStatus()).toBe("ready");
+
+    const context = getLastContext(harness);
+
+    engine.scheduleTone({
+      frequency: 440,
+      duration: 0.1,
+      gain: 0.06,
+      type: "square"
+    });
+
+    expect(context.createOscillator).toHaveBeenCalledTimes(1);
+  });
+
   it("does not schedule anything while idle or muted", async () => {
     const idleEngine = createAudioEngine({ createContext: harness.createContext });
 

@@ -75,7 +75,7 @@ export function createAudioEngine(
 
   return {
     arm: async () => {
-      if (status === "muted") {
+      if (muted) {
         return;
       }
 
