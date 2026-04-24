@@ -29,15 +29,12 @@ const INVADER_PROJECTILE_COLORS = new Set(
 );
 const PLAYER_INVULNERABILITY_HALO_COLOR = "rgba(123, 229, 255, 0.22)";
 const PLAYER_INVULNERABILITY_HALO_MARGIN = 12;
-const PLAYER_SHIP_PIXEL_COUNT = PLAYER_SHIP_DESCRIPTOR.frames.reduce(
-  (frameCount, frame) =>
-    frameCount +
-    frame.reduce(
-      (rowCount, row) => rowCount + [...row].filter((pixel) => pixel !== ".").length,
-      0
-    ),
-  0
-);
+const PLAYER_SHIP_IDLE_PIXEL_COUNT =
+  PLAYER_SHIP_DESCRIPTOR.frames[0]?.reduce(
+    (rowCount, row) =>
+      rowCount + [...row].filter((pixel) => pixel !== ".").length,
+    0
+  ) ?? 0;
 
 type FillRectCall = {
   fillStyle: string | CanvasGradient | CanvasPattern;
@@ -285,7 +282,43 @@ describe("createCanvasRenderer", () => {
       audioStatus: "ready"
     });
 
-    expect(getPlayerShipFillRects(context, state)).toHaveLength(PLAYER_SHIP_PIXEL_COUNT);
+    expect(getPlayerShipFillRects(context, state)).toHaveLength(
+      PLAYER_SHIP_IDLE_PIXEL_COUNT
+    );
+  });
+
+  it("renders a distinct player sprite frame while the shoot animation is active", () => {
+    vi.stubGlobal("window", { devicePixelRatio: 1 });
+
+    const renderPlayerFillRectSequence = (playerShootFrame: number): string[] => {
+      const context = new FakeCanvasContext();
+      const canvas = createFakeCanvas(context);
+      const renderer = createCanvasRenderer(canvas);
+      const state = {
+        ...createPlayingState(),
+        invaders: [],
+        projectiles: [],
+        playerShootFrame
+      };
+
+      renderer.render(state, {
+        bootstrapping: false,
+        highScore: 0,
+        audioStatus: "ready"
+      });
+
+      return getPlayerShipFillRects(context, state).map(
+        ({ fillStyle, x, y, width, height }) =>
+          `${fillStyle}:${x},${y},${width},${height}`
+      );
+    };
+
+    const idleSequence = renderPlayerFillRectSequence(0);
+    const firingSequence = renderPlayerFillRectSequence(1);
+
+    expect(idleSequence).not.toHaveLength(0);
+    expect(firingSequence).not.toHaveLength(0);
+    expect(firingSequence).not.toEqual(idleSequence);
   });
 
   it("renders the HUD score, wave, and one ship glyph per remaining life", () => {
@@ -570,7 +603,9 @@ describe("createCanvasRenderer", () => {
     });
 
     expect(findPlayerInvulnerabilityHalo(context, state)).toBeUndefined();
-    expect(getPlayerShipFillRects(context, state)).toHaveLength(PLAYER_SHIP_PIXEL_COUNT);
+    expect(getPlayerShipFillRects(context, state)).toHaveLength(
+      PLAYER_SHIP_IDLE_PIXEL_COUNT
+    );
   });
 
   it("renders the shared control footer", () => {
