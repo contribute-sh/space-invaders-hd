@@ -214,7 +214,7 @@ describe("createCanvasRenderer", () => {
     renderer.render(state, {
       bootstrapping: false,
       highScore: 0,
-      muted: false
+      audioStatus: "ready"
     });
 
     expect(canvas.width).toBe(2560);
@@ -242,7 +242,7 @@ describe("createCanvasRenderer", () => {
     renderer.render(state, {
       bootstrapping: false,
       highScore: 0,
-      muted: false
+      audioStatus: "ready"
     });
 
     expect(getPlayerShipFillRects(context, state)).toHaveLength(PLAYER_SHIP_PIXEL_COUNT);
@@ -267,7 +267,7 @@ describe("createCanvasRenderer", () => {
     renderer.render(state, {
       bootstrapping: false,
       highScore: 360,
-      muted: false
+      audioStatus: "ready"
     });
 
     expect(
@@ -315,7 +315,7 @@ describe("createCanvasRenderer", () => {
     renderer.render(state, {
       bootstrapping: false,
       highScore,
-      muted: false
+      audioStatus: "ready"
     });
 
     expect(
@@ -327,6 +327,36 @@ describe("createCanvasRenderer", () => {
           call.y < HUD_TOP + HUD_HEIGHT
       )
     ).toBe(true);
+  });
+
+  it("renders distinct audio badge labels and omits the badge when audio is ready", () => {
+    vi.stubGlobal("window", { devicePixelRatio: 1 });
+
+    const renderAudioStatus = (audioStatus: "muted" | "ready" | "unavailable") => {
+      const context = new FakeCanvasContext();
+      const canvas = createFakeCanvas(context);
+      const renderer = createCanvasRenderer(canvas);
+      const state = {
+        ...createPlayingState(),
+        invaders: [],
+        projectiles: []
+      };
+
+      renderer.render(state, {
+        bootstrapping: false,
+        highScore: 0,
+        audioStatus
+      });
+
+      return context.fillTextCalls.map((call) => call.text);
+    };
+
+    expect(renderAudioStatus("muted")).toContain("Muted");
+    expect(renderAudioStatus("muted")).not.toContain("Sound unavailable");
+    expect(renderAudioStatus("unavailable")).toContain("Sound unavailable");
+    expect(renderAudioStatus("unavailable")).not.toContain("Muted");
+    expect(renderAudioStatus("ready")).not.toContain("Muted");
+    expect(renderAudioStatus("ready")).not.toContain("Sound unavailable");
   });
 
   it("renders the invulnerability halo and blinks the ship off on deterministic off frames", () => {
@@ -348,7 +378,7 @@ describe("createCanvasRenderer", () => {
     renderer.render(state, {
       bootstrapping: false,
       highScore: 0,
-      muted: false
+      audioStatus: "ready"
     });
 
     expect(findPlayerInvulnerabilityHalo(context, state)).toBeDefined();
@@ -374,7 +404,7 @@ describe("createCanvasRenderer", () => {
     renderer.render(state, {
       bootstrapping: false,
       highScore: 0,
-      muted: false
+      audioStatus: "ready"
     });
 
     expect(findPlayerInvulnerabilityHalo(context, state)).toBeUndefined();
@@ -396,7 +426,7 @@ describe("createCanvasRenderer", () => {
     renderer.render(state, {
       bootstrapping: false,
       highScore: 0,
-      muted: false
+      audioStatus: "ready"
     });
 
     expect(
@@ -419,7 +449,7 @@ describe("createCanvasRenderer", () => {
     renderer.render(state, {
       bootstrapping: false,
       highScore: 0,
-      muted: false
+      audioStatus: "ready"
     });
 
     expect(

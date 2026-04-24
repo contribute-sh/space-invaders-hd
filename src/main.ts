@@ -63,7 +63,7 @@ export function bootstrap(
 
   const createRenderFlags = (): RuntimeRenderFlags => ({
     bootstrapping,
-    muted: runtime.isMuted(),
+    audioStatus: sfx.getStatus(),
     highScore: runtime.getDisplayHighScore()
   });
 

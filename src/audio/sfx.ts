@@ -1,8 +1,9 @@
 export type SfxName = "shoot" | "hit" | "playerDeath" | "waveClear";
+export type SfxStatus = "idle" | "ready" | "muted" | "unavailable";
 
 export type SfxController = {
   arm: () => Promise<void>;
-  getStatus: () => "idle" | "ready" | "muted";
+  getStatus: () => SfxStatus;
   play: (name: SfxName) => void;
   setMuted: (muted: boolean) => void;
 };
@@ -18,16 +19,12 @@ const SFX_COOLDOWN_SECONDS = 0.03;
 
 export function createSfxController(): SfxController {
   let context: AudioContext | null = null;
-  let status: "idle" | "ready" | "muted" = "idle";
+  let status: Exclude<SfxStatus, "muted"> = "idle";
   let muted = false;
   const lastPlayedAtByName = new Map<SfxName, number>();
 
   return {
     arm: async () => {
-      if (status === "muted") {
-        return;
-      }
-
       try {
         if (context === null) {
           context = new AudioContext();
@@ -38,12 +35,12 @@ export function createSfxController(): SfxController {
         }
         status = "ready";
       } catch {
-        status = "muted";
+        status = "unavailable";
       }
     },
-    getStatus: () => (muted ? "muted" : status),
+    getStatus: () => getStatusValue(status, muted),
     play: (name) => {
-      if (muted || status !== "ready" || context === null) {
+      if (context === null || getStatusValue(status, muted) !== "ready") {
         return;
       }
 
@@ -70,6 +67,21 @@ export function createSfxController(): SfxController {
       muted = value;
     }
   };
+}
+
+function getStatusValue(
+  status: Exclude<SfxStatus, "muted">,
+  muted: boolean
+): SfxStatus {
+  if (status === "unavailable") {
+    return "unavailable";
+  }
+
+  if (muted) {
+    return "muted";
+  }
+
+  return status;
 }
 
 function playTone(

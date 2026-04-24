@@ -362,7 +362,7 @@ describe("createSfxController", () => {
     expect(controller.getStatus()).toBe("ready");
   });
 
-  it("mutes itself when AudioContext construction fails and play becomes a no-op", async () => {
+  it("reports unavailable when AudioContext construction fails and play becomes a no-op", async () => {
     harness.throwOnAudioContextConstruction = true;
 
     const controller = createSfxController();
@@ -371,9 +371,20 @@ describe("createSfxController", () => {
     controller.play("shoot");
 
     expect(harness.audioContextConstructor).toHaveBeenCalledTimes(1);
-    expect(controller.getStatus()).toBe("muted");
+    expect(controller.getStatus()).toBe("unavailable");
     expect(harness.oscillators).toHaveLength(0);
     expect(harness.gains).toHaveLength(0);
+  });
+
+  it("keeps reporting unavailable when the user mutes after an arm failure", async () => {
+    harness.throwOnAudioContextConstruction = true;
+
+    const controller = createSfxController();
+
+    await controller.arm();
+    controller.setMuted(true);
+
+    expect(controller.getStatus()).toBe("unavailable");
   });
 
   it("reports muted while the user mute preference is enabled, even after arming", async () => {
@@ -400,13 +411,16 @@ describe("createSfxController", () => {
   it("restores playback after the user mute preference is cleared", async () => {
     const controller = createSfxController();
 
-    controller.setMuted(true);
     await controller.arm();
+
+    controller.setMuted(true);
+    expect(controller.getStatus()).toBe("muted");
+
     controller.setMuted(false);
+    expect(controller.getStatus()).toBe("ready");
 
     const playback = capturePlayback(harness, controller, "shoot");
 
-    expect(controller.getStatus()).toBe("ready");
     expectScheduledShortBeeps(playback, harness.destination);
   });
 

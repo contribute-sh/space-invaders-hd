@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createMuteStore } from "./audio/mute";
-import type { SfxName } from "./audio/sfx";
+import type { SfxName, SfxStatus } from "./audio/sfx";
 import { EMPTY_INPUT, createPlayingState, type GameState, type Input } from "./game/state";
 import { bootstrap } from "./main";
 import { createHighScoreStore } from "./persistence";
@@ -11,6 +11,7 @@ type HarnessOptions = {
   deriveSfxEvents?: (previousState: GameState, nextState: GameState) => SfxName[];
   initialHighScore?: number;
   initialMuted?: boolean;
+  initialSfxStatus?: SfxStatus;
   initialState?: GameState;
   step?: (state: GameState, dtMs: number, input: Input) => GameState;
 };
@@ -52,14 +53,39 @@ function createHarness(options: HarnessOptions = {}) {
       : { [HIGH_SCORE_STORAGE_KEY]: String(options.initialHighScore) })
   });
   const keyboard = { queued: createInput(), queue(input: Partial<Input> = {}): void { this.queued = createInput(input); }, dispose(): void {}, snapshot(): Input { const input = this.queued; this.queued = createInput(); return input; } };
+  let sfxMuted = options.initialSfxStatus === "muted";
+  let sfxReady = options.initialSfxStatus === "ready";
+  const sfxUnavailable = options.initialSfxStatus === "unavailable";
   const sfx = {
     armCalls: 0,
     playCalls: [] as SfxName[],
     setMutedCalls: [] as boolean[],
-    arm: async (): Promise<void> => { sfx.armCalls += 1; },
-    getStatus: () => "idle" as const,
+    arm: async (): Promise<void> => {
+      sfx.armCalls += 1;
+
+      if (!sfxUnavailable) {
+        sfxReady = true;
+      }
+    },
+    getStatus: (): SfxStatus => {
+      if (sfxUnavailable) {
+        return "unavailable";
+      }
+
+      if (sfxMuted) {
+        return "muted";
+      }
+
+      return sfxReady ? "ready" : "idle";
+    },
     play: (name: SfxName): void => void sfx.playCalls.push(name),
-    setMuted: (muted: boolean): void => void sfx.setMutedCalls.push(muted)
+    setMuted: (muted: boolean): void => {
+      sfx.setMutedCalls.push(muted);
+
+      if (!sfxUnavailable) {
+        sfxMuted = muted;
+      }
+    }
   };
   const stepCalls: Array<{ dtMs: number; input: Input; state: GameState }> = [];
   let hidden = false;
@@ -121,7 +147,11 @@ describe("bootstrap", () => {
   it("arms audio once and persists mute changes", () => {
     const harness = createHarness({ initialMuted: true });
     expect(harness.sfx.setMutedCalls).toEqual([true]);
-    expect(harness.latestRender().flags).toEqual({ bootstrapping: true, highScore: 0, muted: true });
+    expect(harness.latestRender().flags).toEqual({
+      bootstrapping: true,
+      highScore: 0,
+      audioStatus: "muted"
+    });
     harness.keyboard.queue({ firePressed: true });
     harness.render();
     harness.keyboard.queue({ firePressed: true });
@@ -131,7 +161,12 @@ describe("bootstrap", () => {
     expect(harness.sfx.armCalls).toBe(1);
     expect(harness.sfx.setMutedCalls).toEqual([true, false]);
     expect(harness.storage.getItem(MUTE_STORAGE_KEY)).toBe("false");
-    expect(harness.latestRender().flags.muted).toBe(false);
+    expect(harness.latestRender().flags.audioStatus).toBe("ready");
+  });
+  it("surfaces unavailable audio on the first render frame", () => {
+    const harness = createHarness({ initialSfxStatus: "unavailable" });
+
+    expect(harness.latestRender().flags.audioStatus).toBe("unavailable");
   });
   it("records a new high score when gameplay reaches game over", () => {
     const harness = createHarness({
