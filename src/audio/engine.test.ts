@@ -358,4 +358,69 @@ describe("createAudioEngine", () => {
 
     expect(harness.oscillators).toHaveLength(scheduledOscillatorCount + 1);
   });
+
+  it("applies cooldown suppression independently for each scheduleTone tag", async () => {
+    const engine = createAudioEngine({ createContext: harness.createContext });
+    await engine.arm();
+
+    const context = getLastContext(harness);
+    const cooldownSeconds = 0.05;
+
+    context.currentTime = 1;
+    engine.scheduleTone({
+      tag: "shoot",
+      cooldownSeconds,
+      frequency: 720,
+      duration: 0.09,
+      gain: 0.06,
+      type: "square"
+    });
+    engine.scheduleTone({
+      tag: "shoot",
+      cooldownSeconds,
+      frequency: 720,
+      duration: 0.09,
+      gain: 0.06,
+      type: "square"
+    });
+
+    expect(context.createOscillator).toHaveBeenCalledTimes(1);
+
+    context.currentTime += cooldownSeconds + 0.001;
+    engine.scheduleTone({
+      tag: "shoot",
+      cooldownSeconds,
+      frequency: 720,
+      duration: 0.09,
+      gain: 0.06,
+      type: "square"
+    });
+
+    expect(context.createOscillator).toHaveBeenCalledTimes(2);
+
+    context.currentTime = 2;
+    engine.scheduleTone({
+      tag: "shoot",
+      cooldownSeconds,
+      frequency: 720,
+      duration: 0.09,
+      gain: 0.06,
+      type: "square"
+    });
+
+    const createOscillatorCallsAfterShoot = context.createOscillator.mock.calls.length;
+
+    engine.scheduleTone({
+      tag: "hit",
+      cooldownSeconds,
+      frequency: 720,
+      duration: 0.09,
+      gain: 0.06,
+      type: "square"
+    });
+
+    expect(context.createOscillator).toHaveBeenCalledTimes(
+      createOscillatorCallsAfterShoot + 1
+    );
+  });
 });
