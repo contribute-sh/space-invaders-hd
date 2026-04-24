@@ -128,6 +128,58 @@ function getMarchAnimationIntervalMs(state: GameState): number {
   );
 }
 
+function getInvaderProjectileSourceColumn(
+  state: GameState,
+  projectile: GameState["projectiles"][number]
+): number {
+  const sourceInvader = state.invaders.find(
+    (invader) =>
+      Math.abs(
+        invader.x + invader.width / 2 - INVADER_PROJECTILE_WIDTH / 2 - projectile.x
+      ) < 1e-9
+  );
+
+  if (sourceInvader === undefined) {
+    throw new Error(`Missing invader source for projectile ${projectile.id}`);
+  }
+
+  return sourceInvader.col;
+}
+
+function advanceToNextInvaderShot(state: GameState): {
+  state: GameState;
+  sourceColumn: number;
+} {
+  const almost = step(state, INVADER_FIRE_INTERVAL_MS - 1, EMPTY_INPUT);
+  const next = step(almost, 1, EMPTY_INPUT);
+  const projectile = next.projectiles.find(
+    (candidate) =>
+      candidate.owner === "invader" && candidate.id === almost.nextProjectileId
+  );
+
+  if (projectile === undefined) {
+    throw new Error("Expected an invader projectile to spawn");
+  }
+
+  return {
+    state: next,
+    sourceColumn: getInvaderProjectileSourceColumn(next, projectile)
+  };
+}
+
+function collectInvaderShotColumns(state: GameState, shotCount: number): number[] {
+  const sourceColumns: number[] = [];
+  let nextState = state;
+
+  for (let shotIndex = 0; shotIndex < shotCount; shotIndex += 1) {
+    const shot = advanceToNextInvaderShot(nextState);
+    sourceColumns.push(shot.sourceColumn);
+    nextState = shot.state;
+  }
+
+  return sourceColumns;
+}
+
 describe("step", () => {
   it("keeps the start screen active without confirm input", () => {
     const state = createGameState({ phase: "start" });
@@ -335,6 +387,30 @@ describe("step", () => {
 
     expect(almost.projectiles.some((projectile) => projectile.owner === "invader")).toBe(false);
     expect(step(almost, 1, EMPTY_INPUT).projectiles.some((projectile) => projectile.owner === "invader")).toBe(true);
+  });
+
+  it("rotates invader firing across multiple occupied columns from a fresh wave", () => {
+    const sourceColumns = collectInvaderShotColumns(createPlayingState(), 5);
+
+    expect(new Set(sourceColumns).size).toBeGreaterThanOrEqual(3);
+  });
+
+  it("skips a cleared leftmost column and keeps rotating over the remaining columns", () => {
+    const base = createPlayingState();
+    const state = {
+      ...base,
+      invaders: base.invaders.filter((invader) => invader.col > 0)
+    };
+
+    expect(collectInvaderShotColumns(state, 4)).toEqual([1, 2, 3, 4]);
+  });
+
+  it("replays the same invader firing columns from the same starting state", () => {
+    const state = createPlayingState();
+
+    expect(JSON.stringify(collectInvaderShotColumns(state, 6))).toBe(
+      JSON.stringify(collectInvaderShotColumns(state, 6))
+    );
   });
 
   it("does not let an invader killed by the player in the same frame fire", () => {

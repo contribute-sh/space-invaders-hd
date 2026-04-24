@@ -97,6 +97,7 @@ export type GameState = {
   playerShootFrame: number;
   nextProjectileId: number;
   invaderFireCooldownMs: number;
+  invaderFireCursor: number;
   transitionTimerMs: number;
   elapsedMs: number;
 };
@@ -109,6 +110,7 @@ export type GameStateSeed = {
   frame?: number;
   nextProjectileId?: number;
   invaderFireCooldownMs?: number;
+  invaderFireCursor?: number;
   transitionTimerMs?: number;
   elapsedMs?: number;
 };
@@ -184,6 +186,7 @@ export function createGameState(seed: GameStateSeed = {}): GameState {
   const nextProjectileId = seed.nextProjectileId ?? 1;
   const invaderFireCooldownMs =
     seed.invaderFireCooldownMs ?? INVADER_FIRE_INTERVAL_MS;
+  const invaderFireCursor = seed.invaderFireCursor ?? 0;
 
   return {
     phase: seed.phase ?? "start",
@@ -204,6 +207,7 @@ export function createGameState(seed: GameStateSeed = {}): GameState {
     playerShootFrame: 0,
     nextProjectileId,
     invaderFireCooldownMs,
+    invaderFireCursor,
     transitionTimerMs: seed.transitionTimerMs ?? 0,
     elapsedMs: seed.elapsedMs ?? 0
   };
