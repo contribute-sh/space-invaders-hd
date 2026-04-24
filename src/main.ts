@@ -4,6 +4,9 @@ import { createSfxController } from "./audio/sfx";
 import { deriveGameEvents } from "./game/events";
 import {
   EMPTY_INPUT,
+  assignInput,
+  cloneInput,
+  createPauseInput,
   createInitialGameState,
   type GameState,
   type Input
@@ -263,29 +266,6 @@ function getRequiredCanvas(
   }
 
   return canvas;
-}
-
-function cloneInput(input: Input): Input {
-  return {
-    ...EMPTY_INPUT,
-    ...input
-  };
-}
-
-function assignInput(target: Input, input: Input): void {
-  target.moveX = input.moveX;
-  target.firePressed = input.firePressed;
-  target.pausePressed = input.pausePressed;
-  target.fireHeld = input.fireHeld;
-  target.pauseHeld = input.pauseHeld;
-  target.mutePressed = input.mutePressed;
-}
-
-function createPauseInput(): Input {
-  return {
-    ...EMPTY_INPUT,
-    pausePressed: true
-  };
 }
 
 if (typeof window !== "undefined" && typeof document !== "undefined") {
