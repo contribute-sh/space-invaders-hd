@@ -13,8 +13,26 @@ export const SPRITE_DESCRIPTORS = [
   PLAYER_PROJECTILE_DESCRIPTOR
 ] as const satisfies readonly SpriteDescriptor[];
 
-type SpriteDescriptorId = (typeof SPRITE_DESCRIPTORS)[number]["id"];
+type SpriteDescriptorRegistry<D extends readonly { readonly id: string }[]> = {
+  readonly [K in D[number]["id"]]: Extract<D[number], { readonly id: K }>;
+};
 
-export const SPRITE_DESCRIPTOR_REGISTRY = Object.fromEntries(
-  SPRITE_DESCRIPTORS.map((descriptor) => [descriptor.id, descriptor] as const)
-) as Readonly<Record<SpriteDescriptorId, SpriteDescriptor>>;
+function buildRegistry<const D extends readonly { readonly id: string }[]>(
+  descriptors: D
+): SpriteDescriptorRegistry<D>;
+function buildRegistry(
+  descriptors: readonly { readonly id: string }[]
+): Readonly<Record<string, { readonly id: string }>> {
+  const [descriptor, ...rest] = descriptors;
+
+  if (descriptor === undefined) {
+    return {};
+  }
+
+  return {
+    [descriptor.id]: descriptor,
+    ...buildRegistry(rest)
+  };
+}
+
+export const SPRITE_DESCRIPTOR_REGISTRY = buildRegistry(SPRITE_DESCRIPTORS);
