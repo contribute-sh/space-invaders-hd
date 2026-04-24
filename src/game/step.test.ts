@@ -33,17 +33,19 @@ import { step } from "./step";
 
 const SHIELD_HIT_DT_MS = 21;
 
-function createRespawnedPlayingState() {
-  const lifeLost = {
-    ...createPlayingState({
-      elapsedMs: 2_000,
-      lives: 2,
-      score: 440,
-      wave: 2
-    }),
-    phase: "lifeLost" as const,
-    transitionTimerMs: 50
-  };
+function createRespawnedPlayingState(lifeLostState?: GameState & { phase: "lifeLost" }) {
+  const lifeLost =
+    lifeLostState ??
+    {
+      ...createPlayingState({
+        elapsedMs: 2_000,
+        lives: 2,
+        score: 440,
+        wave: 2
+      }),
+      phase: "lifeLost" as const,
+      transitionTimerMs: 50
+    };
 
   return step(lifeLost, 60, EMPTY_INPUT);
 }
@@ -495,12 +497,14 @@ describe("step", () => {
   });
 
   it("starts the next wave from wave clear and preserves score and lives", () => {
-    const state = createGameState({
+    const base = createGameState({
       phase: "waveClear",
       wave: 2,
       score: 310,
       lives: 2
     });
+    const damagedCell = getShieldCell(base, 0, SHIELD_CELL_ROWS - 1, 2);
+    const state = setShieldCellAlive(base, damagedCell.id, false);
 
     const next = step(state, 16, { ...EMPTY_INPUT, firePressed: true });
 
@@ -508,6 +512,8 @@ describe("step", () => {
     expect(next.hud.wave).toBe(3);
     expect(next.hud.score).toBe(310);
     expect(next.hud.lives).toBe(2);
+    expect(getShieldCell(next, 0, SHIELD_CELL_ROWS - 1, 2).alive).toBe(true);
+    expect(countAliveShieldCells(next)).toBe(SHIELD_COUNT * SHIELD_CELL_ROWS * SHIELD_CELL_COLS);
   });
 
   it("pauses from active play", () => {
@@ -755,6 +761,41 @@ describe("step", () => {
     expect(next.projectiles).toHaveLength(0);
   });
 
+  it("preserves shield damage when respawning after a lost life", () => {
+    const damagedRow = SHIELD_CELL_ROWS - 1;
+    const damagedCol = 2;
+    const intactRow = 0;
+    const intactCol = 0;
+    const base = createPlayingState({
+      elapsedMs: 2_000,
+      lives: 2,
+      score: 440,
+      wave: 2
+    });
+    const damagedPlaying = step(
+      {
+        ...base,
+        projectiles: [
+          createShieldProjectile(base, damagedRow, damagedCol, 1, PROJECTILE_SPEED)
+        ],
+        nextProjectileId: 2
+      },
+      SHIELD_HIT_DT_MS,
+      EMPTY_INPUT
+    );
+    const respawned = createRespawnedPlayingState({
+      ...damagedPlaying,
+      phase: "lifeLost",
+      transitionTimerMs: 50
+    });
+
+    expect(getShieldCell(damagedPlaying, 0, damagedRow, damagedCol).alive).toBe(false);
+    expect(respawned.phase).toBe("playing");
+    expect(getShieldCell(respawned, 0, damagedRow, damagedCol).alive).toBe(false);
+    expect(getShieldCell(respawned, 0, intactRow, intactCol).alive).toBe(true);
+    expect(countAliveShieldCells(respawned)).toBe(countAliveShieldCells(damagedPlaying));
+  });
+
   it("sets respawn invulnerability ahead of the current simulation time", () => {
     const next = createRespawnedPlayingState();
 
@@ -849,12 +890,14 @@ describe("step", () => {
   });
 
   it("restarts a fresh run from game over", () => {
-    const state = createGameState({
+    const base = createGameState({
       phase: "gameOver",
       wave: 4,
       score: 650,
       lives: 0
     });
+    const damagedCell = getShieldCell(base, 0, SHIELD_CELL_ROWS - 1, 2);
+    const state = setShieldCellAlive(base, damagedCell.id, false);
 
     const next = step(state, 16, { ...EMPTY_INPUT, firePressed: true });
 
@@ -862,6 +905,8 @@ describe("step", () => {
     expect(next.hud.score).toBe(0);
     expect(next.hud.wave).toBe(1);
     expect(next.hud.lives).toBe(STARTING_LIVES);
+    expect(getShieldCell(next, 0, SHIELD_CELL_ROWS - 1, 2).alive).toBe(true);
+    expect(countAliveShieldCells(next)).toBe(SHIELD_COUNT * SHIELD_CELL_ROWS * SHIELD_CELL_COLS);
   });
 
   it("keeps wave clear active without confirm input", () => {

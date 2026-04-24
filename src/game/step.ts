@@ -114,6 +114,7 @@ function advanceLifeLost(state: GameState, dtMs: number): GameState {
 
     return {
       ...respawnedState,
+      shields: projectileShieldBundle.shields,
       player: {
         ...respawnedState.player,
         invulnerableUntilMs:
