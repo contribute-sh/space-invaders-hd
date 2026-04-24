@@ -144,6 +144,21 @@ describe("createHighScoreStore", () => {
     ).toEqual([]);
   });
 
+  it("only writes to storage when a score sets a new record", () => {
+    const storage = new FakeStorage();
+    const store = createHighScoreStore(storage);
+
+    expect(store.recordScore(500)).toBe(500);
+    expect(store.recordScore(500)).toBe(500);
+    expect(store.recordScore(250)).toBe(500);
+
+    expect(storage.setItemCalls).toHaveLength(1);
+    expect(storage.setItemCalls[0]).toEqual({
+      key: HIGH_SCORE_STORAGE_KEY,
+      value: "500"
+    });
+  });
+
   it("persists scores above the stored high score", () => {
     const storage = new FakeStorage();
     storage.seed(HIGH_SCORE_STORAGE_KEY, "220");
