@@ -7,6 +7,11 @@ import {
   type SpriteDescriptor,
   type SpriteSheet
 } from "./sprites";
+import {
+  applyViewport,
+  computeViewport,
+  type Viewport
+} from "./viewport";
 
 export type RenderFlags = {
   bootstrapping: boolean;
@@ -40,6 +45,9 @@ const HUD_PLAYER_SHIP_SPRITE = prepareSprite({
 });
 const INVADER_ROW_SPRITES = INVADER_ROW_DESCRIPTORS.map(prepareSprite);
 const PLAYER_PROJECTILE_SPRITE = prepareSprite(PLAYER_PROJECTILE_DESCRIPTOR);
+const LETTERBOX_BACKGROUND_COLOR = "#02050e";
+
+type ViewportContext = Parameters<typeof applyViewport>[0];
 
 export function createCanvasRenderer(canvas: HTMLCanvasElement): CanvasRenderer {
   const context = canvas.getContext("2d");
@@ -48,30 +56,104 @@ export function createCanvasRenderer(canvas: HTMLCanvasElement): CanvasRenderer 
     throw new Error("Canvas 2D is unavailable.");
   }
 
+  const viewportContext = createViewportContext(canvas, context);
+
   return {
     render: (state, flags) => {
-      syncCanvasSize(canvas, context, state.arena.width, state.arena.height);
+      const viewport = computeViewport(
+        getViewportWindow(canvas, state.arena.width, state.arena.height),
+        canvas,
+        state.arena.width,
+        state.arena.height
+      );
+
+      syncCanvasViewport(canvas, viewport);
+      clearViewport(context, viewport);
+      applyViewport(viewportContext, viewport);
       drawScene(context, state, flags);
     }
   };
 }
 
-function syncCanvasSize(
+function createViewportContext(
   canvas: HTMLCanvasElement,
-  context: CanvasRenderingContext2D,
+  context: CanvasRenderingContext2D
+): ViewportContext {
+  return {
+    canvas: {
+      get width() {
+        return canvas.width;
+      },
+      set width(width: number) {
+        if (canvas.width !== width) {
+          canvas.width = width;
+        }
+      },
+      get height() {
+        return canvas.height;
+      },
+      set height(height: number) {
+        if (canvas.height !== height) {
+          canvas.height = height;
+        }
+      }
+    },
+    setTransform: (a, b, c, d, e, f) => {
+      context.setTransform(a, b, c, d, e, f);
+    }
+  };
+}
+
+function getViewportWindow(
+  canvas: HTMLCanvasElement,
   logicalWidth: number,
   logicalHeight: number
-): void {
-  const dpr = window.devicePixelRatio || 1;
-  const renderWidth = Math.round(logicalWidth * dpr);
-  const renderHeight = Math.round(logicalHeight * dpr);
+): Parameters<typeof computeViewport>[0] {
+  const currentWindow = typeof window === "undefined" ? undefined : window;
 
-  if (canvas.width !== renderWidth || canvas.height !== renderHeight) {
-    canvas.width = renderWidth;
-    canvas.height = renderHeight;
+  return {
+    devicePixelRatio: currentWindow?.devicePixelRatio,
+    innerWidth:
+      currentWindow?.innerWidth ??
+      (canvas.clientWidth > 0 ? canvas.clientWidth : logicalWidth),
+    innerHeight:
+      currentWindow?.innerHeight ??
+      (canvas.clientHeight > 0 ? canvas.clientHeight : logicalHeight)
+  };
+}
+
+function syncCanvasViewport(
+  canvas: HTMLCanvasElement,
+  viewport: Viewport
+): void {
+  if (canvas.width !== viewport.backingWidth) {
+    canvas.width = viewport.backingWidth;
   }
 
-  context.setTransform(dpr, 0, 0, dpr, 0, 0);
+  if (canvas.height !== viewport.backingHeight) {
+    canvas.height = viewport.backingHeight;
+  }
+
+  const cssWidth = `${viewport.cssWidth}px`;
+  const cssHeight = `${viewport.cssHeight}px`;
+
+  if (canvas.style.width !== cssWidth) {
+    canvas.style.width = cssWidth;
+  }
+
+  if (canvas.style.height !== cssHeight) {
+    canvas.style.height = cssHeight;
+  }
+}
+
+function clearViewport(
+  context: CanvasRenderingContext2D,
+  viewport: Viewport
+): void {
+  context.setTransform(1, 0, 0, 1, 0, 0);
+  context.clearRect(0, 0, viewport.backingWidth, viewport.backingHeight);
+  context.fillStyle = LETTERBOX_BACKGROUND_COLOR;
+  context.fillRect(0, 0, viewport.backingWidth, viewport.backingHeight);
 }
 
 function drawScene(

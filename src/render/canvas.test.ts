@@ -1,6 +1,10 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { createPlayingState } from "../game/state";
+import {
+  ARENA_HEIGHT,
+  ARENA_WIDTH,
+  createPlayingState
+} from "../game/state";
 import { createCanvasRenderer } from "./canvas";
 import { PLAYER_SHIP_DESCRIPTOR } from "./sprites";
 
@@ -35,6 +39,8 @@ type FillTextCall = {
   y: number;
 };
 
+type SetTransformCall = [number, number, number, number, number, number];
+
 class FakeCanvasGradient {
   readonly colorStops: Array<{ color: string; offset: number }> = [];
 
@@ -46,6 +52,7 @@ class FakeCanvasGradient {
 class FakeCanvasContext {
   readonly fillRectCalls: FillRectCall[] = [];
   readonly fillTextCalls: FillTextCall[] = [];
+  readonly setTransformCalls: SetTransformCall[] = [];
 
   fillStyle: string | CanvasGradient | CanvasPattern = "";
   font = "";
@@ -97,16 +104,39 @@ class FakeCanvasContext {
 
   roundRect(): void {}
 
-  setTransform(): void {}
+  setTransform(
+    a: number,
+    b: number,
+    c: number,
+    d: number,
+    e: number,
+    f: number
+  ): void {
+    this.setTransformCalls.push([a, b, c, d, e, f]);
+  }
 
   stroke(): void {}
 }
 
-function createFakeCanvas(context: FakeCanvasContext): HTMLCanvasElement {
+type FakeCanvasOptions = {
+  clientHeight?: number;
+  clientWidth?: number;
+};
+
+function createFakeCanvas(
+  context: FakeCanvasContext,
+  options: FakeCanvasOptions = {}
+): HTMLCanvasElement {
   return {
     getContext: (contextId: string) =>
       contextId === "2d" ? (context as unknown as CanvasRenderingContext2D) : null,
+    clientHeight: options.clientHeight ?? ARENA_HEIGHT,
+    clientWidth: options.clientWidth ?? ARENA_WIDTH,
     height: 0,
+    style: {
+      height: "",
+      width: ""
+    } as CSSStyleDeclaration,
     width: 0
   } as HTMLCanvasElement;
 }
@@ -162,6 +192,69 @@ function findPlayerInvulnerabilityHalo(
 describe("createCanvasRenderer", () => {
   afterEach(() => {
     vi.unstubAllGlobals();
+  });
+
+  it("sets a DPR-scaled letterboxed viewport on wide canvases", () => {
+    vi.stubGlobal("window", { devicePixelRatio: 2 });
+
+    const context = new FakeCanvasContext();
+    const canvas = createFakeCanvas(context, {
+      clientWidth: 1200,
+      clientHeight: 600
+    });
+    const renderer = createCanvasRenderer(canvas);
+    const state = {
+      ...createPlayingState(),
+      invaders: [],
+      projectiles: []
+    };
+
+    renderer.render(state, {
+      bootstrapping: false,
+      highScore: 0,
+      muted: false
+    });
+
+    expect(canvas.width).toBe(2400);
+    expect(canvas.height).toBe(1200);
+    expect(canvas.style.width).toBe("1200px");
+    expect(canvas.style.height).toBe("600px");
+    expect(context.setTransformCalls).toHaveLength(2);
+    expect(context.setTransformCalls[0]).toEqual([1, 0, 0, 1, 0, 0]);
+
+    const viewportTransform = context.setTransformCalls[1];
+
+    expect(viewportTransform).toBeDefined();
+    expect(viewportTransform?.[0]).toBeCloseTo(5 / 3);
+    expect(viewportTransform?.[1]).toBe(0);
+    expect(viewportTransform?.[2]).toBe(0);
+    expect(viewportTransform?.[3]).toBeCloseTo(5 / 3);
+    expect(viewportTransform?.[4]).toBeCloseTo(400);
+    expect(viewportTransform?.[5]).toBe(0);
+  });
+
+  it("keeps sprite drawing in logical coordinates on portrait canvases", () => {
+    vi.stubGlobal("window", { devicePixelRatio: 3 });
+
+    const context = new FakeCanvasContext();
+    const canvas = createFakeCanvas(context, {
+      clientWidth: 600,
+      clientHeight: 1200
+    });
+    const renderer = createCanvasRenderer(canvas);
+    const state = {
+      ...createPlayingState(),
+      invaders: [],
+      projectiles: []
+    };
+
+    renderer.render(state, {
+      bootstrapping: false,
+      highScore: 0,
+      muted: false
+    });
+
+    expect(getPlayerShipFillRects(context, state)).toHaveLength(PLAYER_SHIP_PIXEL_COUNT);
   });
 
   it("renders the HUD score, wave, and one ship glyph per remaining life", () => {
