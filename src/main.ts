@@ -1,7 +1,7 @@
 import { deriveSfxEvents, mapGameEventsToSfxEvents } from "./audio/events";
 import { createMuteStore } from "./audio/mute";
 import { createSfxController } from "./audio/sfx";
-import { deriveGameEvents, type GameEvent } from "./game/events";
+import { deriveGameEvents } from "./game/events";
 import {
   EMPTY_INPUT,
   createInitialGameState,
@@ -102,13 +102,13 @@ export function bootstrap(
     previousState: GameState,
     nextState: GameState
   ) => {
-    const gameEvents = deriveGameEvents(previousState, nextState);
+    if (options.deriveSfxEvents !== undefined) {
+      return options.deriveSfxEvents(previousState, nextState);
+    }
 
-    recordHighScoreFromEvents(highScoreStore, gameEvents);
-
-    return options.deriveSfxEvents === undefined
-      ? mapGameEventsToSfxEvents(gameEvents)
-      : options.deriveSfxEvents(previousState, nextState);
+    return mapGameEventsToSfxEvents(
+      deriveGameEvents(previousState, nextState)
+    );
   };
 
   const runtime = createGameRuntime({
@@ -119,7 +119,9 @@ export function bootstrap(
     readInput,
     sfxController: sfx,
     step: (state, dtMs, input) => advanceGameState(state, dtMs, cloneInput(input)),
-    writeHighScore: () => undefined
+    writeHighScore: (score) => {
+      highScoreStore.recordScore(score);
+    }
   });
 
   const renderRuntime = (): void => {
@@ -284,17 +286,6 @@ function createPauseInput(): Input {
     ...EMPTY_INPUT,
     pausePressed: true
   };
-}
-
-function recordHighScoreFromEvents(
-  highScoreStore: Pick<ReturnType<typeof createHighScoreStore>, "recordScore">,
-  events: readonly GameEvent[]
-): void {
-  for (const event of events) {
-    if (event.type === "scoreChanged") {
-      highScoreStore.recordScore(event.nextScore);
-    }
-  }
 }
 
 if (typeof window !== "undefined" && typeof document !== "undefined") {
