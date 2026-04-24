@@ -1,13 +1,32 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { createGameState, createPlayingState } from "../game/state";
+import {
+  INVADER_PROJECTILE_HEIGHT,
+  INVADER_PROJECTILE_WIDTH,
+  PROJECTILE_HEIGHT,
+  PROJECTILE_WIDTH,
+  createGameState,
+  createPlayingState
+} from "../game/state";
 import { CONTROL_FOOTER, OVERLAY_PROMPTS } from "../input/bindings";
 import { createCanvasRenderer } from "./canvas";
-import { PLAYER_SHIP_DESCRIPTOR } from "./sprites";
+import {
+  INVADER_PROJECTILE_DESCRIPTOR,
+  PLAYER_PROJECTILE_DESCRIPTOR,
+  PLAYER_SHIP_DESCRIPTOR,
+  SHIELD_CELL_DESCRIPTOR
+} from "./sprites";
 
 const HUD_TOP = 18;
 const HUD_HEIGHT = 68;
 const HUD_SHIP_COLORS = new Set(Object.values(PLAYER_SHIP_DESCRIPTOR.palette));
+const SHIELD_CELL_COLORS = new Set(Object.values(SHIELD_CELL_DESCRIPTOR.palette));
+const PLAYER_PROJECTILE_COLORS = new Set(
+  Object.values(PLAYER_PROJECTILE_DESCRIPTOR.palette)
+);
+const INVADER_PROJECTILE_COLORS = new Set(
+  Object.values(INVADER_PROJECTILE_DESCRIPTOR.palette)
+);
 const PLAYER_INVULNERABILITY_HALO_COLOR = "rgba(123, 229, 255, 0.22)";
 const PLAYER_INVULNERABILITY_HALO_MARGIN = 12;
 const PLAYER_SHIP_PIXEL_COUNT = PLAYER_SHIP_DESCRIPTOR.frames.reduce(
@@ -160,6 +179,27 @@ function countClusters(values: number[]): number {
   }
 
   return clusterCount;
+}
+
+function getColoredFillRectsInBounds(
+  context: FakeCanvasContext,
+  colors: ReadonlySet<string>,
+  bounds: {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  }
+): FillRectCall[] {
+  return context.fillRectCalls.filter(
+    (call) =>
+      typeof call.fillStyle === "string" &&
+      colors.has(call.fillStyle) &&
+      call.x >= bounds.x &&
+      call.y >= bounds.y &&
+      call.x + call.width <= bounds.x + bounds.width &&
+      call.y + call.height <= bounds.y + bounds.height
+  );
 }
 
 function getPlayerShipFillRects(
@@ -327,6 +367,127 @@ describe("createCanvasRenderer", () => {
           call.y < HUD_TOP + HUD_HEIGHT
       )
     ).toBe(true);
+  });
+
+  it("renders live shield cells with the registered shield-cell sprite", () => {
+    vi.stubGlobal("window", { devicePixelRatio: 1 });
+
+    const context = new FakeCanvasContext();
+    const canvas = createFakeCanvas(context);
+    const renderer = createCanvasRenderer(canvas);
+    const baseState = createPlayingState();
+    const aliveCell = baseState.shields[0]?.cells[0];
+    const deadCell = baseState.shields[0]?.cells[1];
+
+    if (aliveCell === undefined || deadCell === undefined) {
+      throw new Error("Test state must include shield cells.");
+    }
+
+    const state = {
+      ...baseState,
+      invaders: [],
+      projectiles: [],
+      shields: [
+        {
+          id: 1,
+          cells: [aliveCell, { ...deadCell, alive: false }]
+        }
+      ]
+    };
+
+    renderer.render(state, {
+      bootstrapping: false,
+      highScore: 0,
+      audioStatus: "ready"
+    });
+
+    const aliveShieldRects = getColoredFillRectsInBounds(
+      context,
+      SHIELD_CELL_COLORS,
+      aliveCell
+    );
+    const deadShieldRects = getColoredFillRectsInBounds(
+      context,
+      SHIELD_CELL_COLORS,
+      deadCell
+    );
+
+    expect(aliveShieldRects.length).toBeGreaterThan(0);
+    expect(deadShieldRects).toHaveLength(0);
+
+    for (const call of aliveShieldRects) {
+      expect(call.width).toBe(SHIELD_CELL_DESCRIPTOR.pixelSize);
+      expect(call.height).toBe(SHIELD_CELL_DESCRIPTOR.pixelSize);
+    }
+  });
+
+  it("uses the invader projectile sprite for enemy shots and keeps player shots unchanged", () => {
+    vi.stubGlobal("window", { devicePixelRatio: 1 });
+
+    const context = new FakeCanvasContext();
+    const canvas = createFakeCanvas(context);
+    const renderer = createCanvasRenderer(canvas);
+    const state = {
+      ...createPlayingState(),
+      invaders: [],
+      shields: [],
+      projectiles: [
+        {
+          id: 1,
+          owner: "player" as const,
+          x: 180,
+          y: 220,
+          width: PROJECTILE_WIDTH,
+          height: PROJECTILE_HEIGHT,
+          velocityY: 0,
+          active: true
+        },
+        {
+          id: 2,
+          owner: "invader" as const,
+          x: 260,
+          y: 260,
+          width: INVADER_PROJECTILE_WIDTH,
+          height: INVADER_PROJECTILE_HEIGHT,
+          velocityY: 0,
+          active: true
+        }
+      ]
+    };
+
+    renderer.render(state, {
+      bootstrapping: false,
+      highScore: 0,
+      audioStatus: "ready"
+    });
+
+    const [playerProjectile, invaderProjectile] = state.projectiles;
+
+    if (playerProjectile === undefined || invaderProjectile === undefined) {
+      throw new Error("Test state must include both projectile types.");
+    }
+
+    expect(
+      getColoredFillRectsInBounds(
+        context,
+        PLAYER_PROJECTILE_COLORS,
+        playerProjectile
+      )
+    ).not.toHaveLength(0);
+    expect(
+      getColoredFillRectsInBounds(
+        context,
+        INVADER_PROJECTILE_COLORS,
+        invaderProjectile
+      )
+    ).not.toHaveLength(0);
+    expect(
+      getColoredFillRectsInBounds(
+        context,
+        PLAYER_PROJECTILE_COLORS,
+        invaderProjectile
+      )
+    ).toHaveLength(0);
   });
 
   it("renders distinct badge text for muted and unavailable audio", () => {
