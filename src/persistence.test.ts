@@ -1,12 +1,13 @@
 import { describe, expect, it } from "vitest";
 
-import { createHighScoreStore } from "./persistence";
+import { createHighScoreStore, pickDisplayHighScore } from "./persistence";
 
 const HIGH_SCORE_STORAGE_KEY = "space-invaders-hd.highScore";
 
 class FakeStorage implements Storage {
   private readonly entries = new Map<string, string>();
 
+  public readonly setItemCalls: Array<{ key: string; value: string }> = [];
   public throwOnGet = false;
   public throwOnSet = false;
 
@@ -39,6 +40,7 @@ class FakeStorage implements Storage {
       throw new Error("setItem failed");
     }
 
+    this.setItemCalls.push({ key, value });
     this.entries.set(key, value);
   }
 
@@ -46,6 +48,13 @@ class FakeStorage implements Storage {
     this.entries.set(key, value);
   }
 }
+
+describe("pickDisplayHighScore", () => {
+  it("returns the larger of the stored and current score", () => {
+    expect(pickDisplayHighScore(220, 360)).toBe(360);
+    expect(pickDisplayHighScore(480, 360)).toBe(480);
+  });
+});
 
 describe("createHighScoreStore", () => {
   it("returns 0 when storage is empty", () => {
@@ -72,6 +81,7 @@ describe("createHighScoreStore", () => {
 
     expect(store.recordScore(100)).toBe(220);
     expect(storage.getItem(HIGH_SCORE_STORAGE_KEY)).toBe("220");
+    expect(storage.setItemCalls).toHaveLength(0);
   });
 
   it("persists scores above the stored high score", () => {
@@ -81,6 +91,34 @@ describe("createHighScoreStore", () => {
 
     expect(store.recordScore(360)).toBe(360);
     expect(storage.getItem(HIGH_SCORE_STORAGE_KEY)).toBe("360");
+  });
+
+  it("persists each new high score exactly once", () => {
+    const storage = new FakeStorage();
+    const store = createHighScoreStore(storage);
+
+    expect(store.recordScore(120)).toBe(120);
+    expect(store.recordScore(240)).toBe(240);
+    expect(store.recordScore(240)).toBe(240);
+    expect(store.recordScore(360)).toBe(360);
+
+    expect(storage.setItemCalls).toEqual([
+      { key: HIGH_SCORE_STORAGE_KEY, value: "120" },
+      { key: HIGH_SCORE_STORAGE_KEY, value: "240" },
+      { key: HIGH_SCORE_STORAGE_KEY, value: "360" }
+    ]);
+    expect(storage.getItem(HIGH_SCORE_STORAGE_KEY)).toBe("360");
+  });
+
+  it("surfaces the live high score before any final game-over write", () => {
+    const storage = new FakeStorage();
+    storage.seed(HIGH_SCORE_STORAGE_KEY, "220");
+    const store = createHighScoreStore(storage);
+
+    expect(store.recordScore(260)).toBe(260);
+    expect(store.getHighScore()).toBe(260);
+    expect(pickDisplayHighScore(store.getHighScore(), 320)).toBe(320);
+    expect(storage.getItem(HIGH_SCORE_STORAGE_KEY)).toBe("260");
   });
 
   it.each(["not-a-number", "-5", "NaN"])(

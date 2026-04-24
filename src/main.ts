@@ -10,7 +10,7 @@ import {
 import { step } from "./game/step";
 import { createKeyboardController } from "./input/keyboard";
 import { createFixedStepLoop } from "./loop/fixedStep";
-import { createHighScoreStore } from "./persistence";
+import { createHighScoreStore, pickDisplayHighScore } from "./persistence";
 import { createCanvasRenderer, type CanvasRenderer } from "./render/canvas";
 import { createVisibilityPauseController } from "./visibility";
 
@@ -109,7 +109,7 @@ function maybeArmAudio(phase: GameState["phase"], input: Input): void {
 function advanceState(dtMs: number, input: Input): void {
   const previousState = state;
   state = step(state, dtMs, input);
-  maybeRecordHighScore(previousState, state);
+  maybeRecordHighScore(state.hud.score);
   playDerivedEvents(previousState, state);
 }
 
@@ -119,22 +119,22 @@ function playDerivedEvents(previousState: GameState, nextState: GameState): void
   }
 }
 
-function maybeRecordHighScore(
-  previousState: GameState,
-  nextState: GameState
-): void {
-  if (previousState.phase === "gameOver" || nextState.phase !== "gameOver") {
+function maybeRecordHighScore(score: number): void {
+  if (score <= highScoreStore.getHighScore()) {
     return;
   }
 
-  highScoreStore.recordScore(nextState.hud.score);
+  highScoreStore.recordScore(score);
 }
 
 function createRenderFlags(muted: boolean): RuntimeRenderFlags {
   return {
     bootstrapping,
     muted,
-    highScore: highScoreStore.getHighScore()
+    highScore: pickDisplayHighScore(
+      highScoreStore.getHighScore(),
+      state.hud.score
+    )
   };
 }
 
