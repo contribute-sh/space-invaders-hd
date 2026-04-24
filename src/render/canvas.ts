@@ -1,11 +1,7 @@
 import type { GameState, Invader, Projectile } from "../game/state";
 import {
-  INVADER_ROW_DESCRIPTORS,
-  PLAYER_PROJECTILE_DESCRIPTOR,
-  PLAYER_SHIP_DESCRIPTOR,
-  createSpriteSheet,
-  type SpriteDescriptor,
-  type SpriteSheet
+  getSprite,
+  type PreparedSprite
 } from "./sprites";
 import { applyViewport, computeViewport, type Viewport } from "./viewport";
 
@@ -25,22 +21,6 @@ const PLAYER_INVULNERABILITY_HALO_COLOR = "rgba(123, 229, 255, 0.22)";
 const PLAYER_INVULNERABILITY_HALO_MARGIN = 12;
 const HUD_MONOSPACE_FONT =
   '600 18px ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace';
-
-type PreparedSprite = {
-  frameCount: number;
-  height: number;
-  sheet: SpriteSheet;
-  width: number;
-};
-
-const PLAYER_SHIP_SPRITE = prepareSprite(PLAYER_SHIP_DESCRIPTOR);
-const HUD_PLAYER_SHIP_SPRITE = prepareSprite({
-  ...PLAYER_SHIP_DESCRIPTOR,
-  id: "hud-player-ship",
-  pixelSize: 2
-});
-const INVADER_ROW_SPRITES = INVADER_ROW_DESCRIPTORS.map(prepareSprite);
-const PLAYER_PROJECTILE_SPRITE = prepareSprite(PLAYER_PROJECTILE_DESCRIPTOR);
 
 export function createCanvasRenderer(canvas: HTMLCanvasElement): CanvasRenderer {
   const context = canvas.getContext("2d");
@@ -280,11 +260,7 @@ function drawInvaders(
   marchFrame: GameState["marchFrame"]
 ): void {
   for (const invader of invaders) {
-    const sprite = INVADER_ROW_SPRITES[invader.row];
-
-    if (sprite === undefined) {
-      continue;
-    }
+    const sprite = getSprite(`invader-row-${invader.row}`);
 
     const hue = 190 + invader.row * 18;
     const shadowFill = `hsla(${hue}, 100%, 60%, 0.18)`;
@@ -308,13 +284,15 @@ function drawProjectiles(
   context: CanvasRenderingContext2D,
   projectiles: Projectile[]
 ): void {
+  const projectileSprite = getSprite("player-projectile");
+
   for (const projectile of projectiles) {
     context.fillStyle = "rgba(114, 226, 255, 0.25)";
     roundRect(context, projectile.x - 3, projectile.y - 6, projectile.width + 6, projectile.height + 12, 6);
     context.fill();
     drawSpriteInBounds(
       context,
-      PLAYER_PROJECTILE_SPRITE,
+      projectileSprite,
       0,
       projectile.x,
       projectile.y,
@@ -327,6 +305,7 @@ function drawProjectiles(
 function drawPlayer(context: CanvasRenderingContext2D, state: GameState): void {
   const { player } = state;
   const playerIsInvulnerable = state.elapsedMs < player.invulnerableUntilMs;
+  const playerSprite = getSprite("player-ship");
 
   if (playerIsInvulnerable) {
     context.fillStyle = PLAYER_INVULNERABILITY_HALO_COLOR;
@@ -351,7 +330,7 @@ function drawPlayer(context: CanvasRenderingContext2D, state: GameState): void {
   context.fill();
   drawSpriteInBounds(
     context,
-    PLAYER_SHIP_SPRITE,
+    playerSprite,
     state.playerShootFrame > 0 ? 1 : 0,
     player.x,
     player.y,
@@ -463,6 +442,7 @@ function drawHudLives(
   hudRight: number
 ): void {
   const lifeCount = Math.max(0, state.hud.lives);
+  const hudPlayerShipSprite = getSprite("hud-player-ship");
 
   if (lifeCount === 0) {
     return;
@@ -470,13 +450,13 @@ function drawHudLives(
 
   const gap = 10;
   const totalWidth =
-    lifeCount * HUD_PLAYER_SHIP_SPRITE.width + (lifeCount - 1) * gap;
+    lifeCount * hudPlayerShipSprite.width + (lifeCount - 1) * gap;
   let x = hudRight - 22 - totalWidth;
   const y = 56;
 
   for (let index = 0; index < lifeCount; index += 1) {
-    HUD_PLAYER_SHIP_SPRITE.sheet.drawFrame(context, 0, x, y);
-    x += HUD_PLAYER_SHIP_SPRITE.width + gap;
+    hudPlayerShipSprite.sheet.drawFrame(context, 0, x, y);
+    x += hudPlayerShipSprite.width + gap;
   }
 }
 
@@ -490,22 +470,6 @@ function roundRect(
 ): void {
   context.beginPath();
   context.roundRect(x, y, width, height, radius);
-}
-
-function prepareSprite(descriptor: SpriteDescriptor): PreparedSprite {
-  const firstFrame = descriptor.frames[0];
-  const firstRow = firstFrame?.[0];
-
-  if (firstFrame === undefined || firstRow === undefined) {
-    throw new Error(`Sprite "${descriptor.id}" must include a non-empty frame.`);
-  }
-
-  return {
-    frameCount: descriptor.frames.length,
-    height: firstFrame.length * descriptor.pixelSize,
-    sheet: createSpriteSheet(descriptor),
-    width: firstRow.length * descriptor.pixelSize
-  };
 }
 
 function drawSpriteInBounds(

@@ -22,6 +22,13 @@ export type SpriteSheet = {
   getFrameCount: () => number;
 };
 
+export type PreparedSprite = {
+  sheet: SpriteSheet;
+  width: number;
+  height: number;
+  frameCount: number;
+};
+
 export const EMPTY_PIXEL = ".";
 
 const PLAYER_SHIP_FRAMES: readonly SpriteFrame[] = [
@@ -153,6 +160,29 @@ export const SPRITE_DESCRIPTORS = [
   PLAYER_PROJECTILE_DESCRIPTOR
 ] as const satisfies readonly SpriteDescriptor[];
 
+const HUD_PLAYER_SHIP_DESCRIPTOR = {
+  ...PLAYER_SHIP_DESCRIPTOR,
+  id: "hud-player-ship",
+  pixelSize: 2
+} satisfies SpriteDescriptor;
+
+const INVADER_ROW_SPRITES = {
+  "invader-row-0": prepareSprite(INVADER_ROW_DESCRIPTORS[0]),
+  "invader-row-1": prepareSprite(INVADER_ROW_DESCRIPTORS[1]),
+  "invader-row-2": prepareSprite(INVADER_ROW_DESCRIPTORS[2]),
+  "invader-row-3": prepareSprite(INVADER_ROW_DESCRIPTORS[3]),
+  "invader-row-4": prepareSprite(INVADER_ROW_DESCRIPTORS[4])
+} satisfies Record<(typeof INVADER_ROW_DESCRIPTORS)[number]["id"], PreparedSprite>;
+
+const SPRITE_REGISTRY = {
+  "player-ship": prepareSprite(PLAYER_SHIP_DESCRIPTOR),
+  "hud-player-ship": prepareSprite(HUD_PLAYER_SHIP_DESCRIPTOR),
+  "player-projectile": prepareSprite(PLAYER_PROJECTILE_DESCRIPTOR),
+  ...INVADER_ROW_SPRITES
+} satisfies Record<string, PreparedSprite>;
+
+export type SpriteKey = keyof typeof SPRITE_REGISTRY;
+
 export function createSpriteSheet(descriptor: SpriteDescriptor): SpriteSheet {
   validateDescriptor(descriptor);
 
@@ -196,6 +226,16 @@ export function createSpriteSheet(descriptor: SpriteDescriptor): SpriteSheet {
   };
 }
 
+export function getSprite(key: SpriteKey): PreparedSprite;
+export function getSprite(key: string): PreparedSprite;
+export function getSprite(key: string): PreparedSprite {
+  if (!isSpriteKey(key)) {
+    throw new Error(`Unknown sprite key "${key}".`);
+  }
+
+  return SPRITE_REGISTRY[key];
+}
+
 function validateDescriptor(descriptor: SpriteDescriptor): void {
   if (!Number.isFinite(descriptor.pixelSize) || descriptor.pixelSize <= 0) {
     throw new Error(`Sprite "${descriptor.id}" must use a positive pixelSize.`);
@@ -220,4 +260,24 @@ function validateDescriptor(descriptor: SpriteDescriptor): void {
       }
     }
   }
+}
+
+function prepareSprite(descriptor: SpriteDescriptor): PreparedSprite {
+  const firstFrame = descriptor.frames[0];
+  const firstRow = firstFrame?.[0];
+
+  if (firstFrame === undefined || firstRow === undefined) {
+    throw new Error(`Sprite "${descriptor.id}" must include a non-empty frame.`);
+  }
+
+  return {
+    frameCount: descriptor.frames.length,
+    height: firstFrame.length * descriptor.pixelSize,
+    sheet: createSpriteSheet(descriptor),
+    width: firstRow.length * descriptor.pixelSize
+  };
+}
+
+function isSpriteKey(key: string): key is SpriteKey {
+  return Object.prototype.hasOwnProperty.call(SPRITE_REGISTRY, key);
 }
