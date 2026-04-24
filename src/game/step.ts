@@ -164,15 +164,14 @@ function advancePlaying(state: GameState, dtMs: number, input: Input): GameState
     shootCooldownMs: cooldown
   };
 
-  const projectileBundle = maybeSpawnProjectiles(
+  const playerProjectileBundle = maybeSpawnPlayerProjectile(
     state,
     movedPlayer,
     input.firePressed,
-    playerShootFrame,
-    invaderFireCooldownMs
+    playerShootFrame
   );
   const projectileShieldBundle = moveProjectilesThroughShields(
-    projectileBundle.projectiles,
+    playerProjectileBundle.projectiles,
     dtSeconds,
     state.arena.floorY,
     state.shields
@@ -182,6 +181,17 @@ function advancePlaying(state: GameState, dtMs: number, input: Input): GameState
     projectileShieldBundle.projectiles,
     formationBundle.invaders
   );
+  const invaderProjectileBundle = maybeSpawnInvaderProjectile(
+    {
+      ...state,
+      player: movedPlayer,
+      projectiles: collisionBundle.projectiles,
+      invaders: collisionBundle.invaders,
+      formation: formationBundle.formation,
+      nextProjectileId: playerProjectileBundle.nextProjectileId
+    },
+    invaderFireCooldownMs
+  );
   const score = state.hud.score + collisionBundle.scoreDelta;
   const marchFrame = formationBundle.didAdvance
     ? toggleMarchFrame(state.marchFrame)
@@ -190,14 +200,14 @@ function advancePlaying(state: GameState, dtMs: number, input: Input): GameState
     movedPlayer.invulnerableUntilMs > nextElapsedMs;
   const playerHitProjectile = playerIsInvulnerable
     ? undefined
-    : collisionBundle.projectiles.find(
+    : invaderProjectileBundle.projectiles.find(
         (projectile) =>
           projectile.owner === "invader" && intersects(projectile, movedPlayer)
       );
   const remainingProjectiles =
     playerHitProjectile === undefined
-      ? collisionBundle.projectiles
-      : collisionBundle.projectiles.filter(
+      ? invaderProjectileBundle.projectiles
+      : invaderProjectileBundle.projectiles.filter(
           (projectile) => projectile.id !== playerHitProjectile.id
         );
 
@@ -224,10 +234,10 @@ function advancePlaying(state: GameState, dtMs: number, input: Input): GameState
         score,
         lives: Math.max(0, state.hud.lives - 1)
       },
-      invaderFireCooldownMs: projectileBundle.invaderFireCooldownMs,
+      invaderFireCooldownMs: invaderProjectileBundle.invaderFireCooldownMs,
       transitionTimerMs: LIFE_LOST_DURATION_MS,
       frame: nextFrame,
-      nextProjectileId: projectileBundle.nextProjectileId,
+      nextProjectileId: invaderProjectileBundle.nextProjectileId,
       elapsedMs: nextElapsedMs
     };
   }
@@ -237,10 +247,10 @@ function advancePlaying(state: GameState, dtMs: number, input: Input): GameState
       ...state,
       phase: "waveClear",
       marchFrame,
-      playerShootFrame: projectileBundle.playerShootFrame,
+      playerShootFrame: playerProjectileBundle.playerShootFrame,
       player: {
         ...movedPlayer,
-        shootCooldownMs: projectileBundle.playerShootCooldownMs
+        shootCooldownMs: playerProjectileBundle.playerShootCooldownMs
       },
       projectiles: [],
       shields: projectileShieldBundle.shields,
@@ -250,10 +260,10 @@ function advancePlaying(state: GameState, dtMs: number, input: Input): GameState
         ...state.hud,
         score
       },
-      invaderFireCooldownMs: projectileBundle.invaderFireCooldownMs,
+      invaderFireCooldownMs: invaderProjectileBundle.invaderFireCooldownMs,
       transitionTimerMs: 0,
       frame: nextFrame,
-      nextProjectileId: projectileBundle.nextProjectileId,
+      nextProjectileId: invaderProjectileBundle.nextProjectileId,
       elapsedMs: nextElapsedMs
     };
   }
@@ -261,12 +271,12 @@ function advancePlaying(state: GameState, dtMs: number, input: Input): GameState
   return {
     ...state,
     marchFrame,
-    playerShootFrame: projectileBundle.playerShootFrame,
+    playerShootFrame: playerProjectileBundle.playerShootFrame,
     player: {
       ...movedPlayer,
-      shootCooldownMs: projectileBundle.playerShootCooldownMs
+      shootCooldownMs: playerProjectileBundle.playerShootCooldownMs
     },
-    projectiles: collisionBundle.projectiles,
+    projectiles: invaderProjectileBundle.projectiles,
     shields: projectileShieldBundle.shields,
     invaders: collisionBundle.invaders,
     formation: formationBundle.formation,
@@ -275,22 +285,20 @@ function advancePlaying(state: GameState, dtMs: number, input: Input): GameState
       score
     },
     frame: nextFrame,
-    invaderFireCooldownMs: projectileBundle.invaderFireCooldownMs,
+    invaderFireCooldownMs: invaderProjectileBundle.invaderFireCooldownMs,
     transitionTimerMs: 0,
-    nextProjectileId: projectileBundle.nextProjectileId,
+    nextProjectileId: invaderProjectileBundle.nextProjectileId,
     elapsedMs: nextElapsedMs
   };
 }
 
-function maybeSpawnProjectiles(
+function maybeSpawnPlayerProjectile(
   state: GameState,
   player: GameState["player"],
   firePressed: boolean,
-  playerShootFrame: number,
-  invaderFireCooldownMs: number
+  playerShootFrame: number
 ): {
   nextProjectileId: number;
-  invaderFireCooldownMs: number;
   playerShootCooldownMs: number;
   playerShootFrame: number;
   projectiles: Projectile[];
@@ -299,8 +307,6 @@ function maybeSpawnProjectiles(
   let nextPlayerShootCooldownMs = player.shootCooldownMs;
   let nextPlayerShootFrame = playerShootFrame;
   let nextProjectiles = state.projectiles;
-  let nextInvaderFireCooldownMs = invaderFireCooldownMs;
-  let firingInvader: Invader | undefined;
 
   if (firePressed && player.shootCooldownMs <= 0) {
     const playerProjectile = createPlayerProjectile(
@@ -318,38 +324,57 @@ function maybeSpawnProjectiles(
     nextPlayerShootFrame = PLAYER_SHOOT_FRAME_DURATION_MS;
   }
 
-  if (nextInvaderFireCooldownMs <= 0) {
-    for (const invader of state.invaders) {
-      if (
-        firingInvader === undefined ||
-        invader.col < firingInvader.col ||
-        (invader.col === firingInvader.col && invader.row > firingInvader.row)
-      ) {
-        firingInvader = invader;
-      }
-    }
-
-    if (firingInvader !== undefined) {
-      const invaderProjectile = createInvaderProjectile(
-        {
-          ...state,
-          nextProjectileId
-        },
-        firingInvader
-      );
-
-      nextProjectiles = [...nextProjectiles, invaderProjectile];
-      nextProjectileId += 1;
-      nextInvaderFireCooldownMs = INVADER_FIRE_INTERVAL_MS;
-    }
-  }
-
   return {
     nextProjectileId,
-    invaderFireCooldownMs: nextInvaderFireCooldownMs,
     playerShootCooldownMs: nextPlayerShootCooldownMs,
     playerShootFrame: nextPlayerShootFrame,
     projectiles: nextProjectiles
+  };
+}
+
+function maybeSpawnInvaderProjectile(
+  state: GameState,
+  invaderFireCooldownMs: number
+): {
+  nextProjectileId: number;
+  invaderFireCooldownMs: number;
+  projectiles: Projectile[];
+} {
+  if (invaderFireCooldownMs > 0) {
+    return {
+      nextProjectileId: state.nextProjectileId,
+      invaderFireCooldownMs,
+      projectiles: state.projectiles
+    };
+  }
+
+  let firingInvader: Invader | undefined;
+
+  for (const invader of state.invaders) {
+    if (
+      firingInvader === undefined ||
+      invader.col < firingInvader.col ||
+      (invader.col === firingInvader.col && invader.row > firingInvader.row)
+    ) {
+      firingInvader = invader;
+    }
+  }
+
+  if (firingInvader === undefined) {
+    return {
+      nextProjectileId: state.nextProjectileId,
+      invaderFireCooldownMs,
+      projectiles: state.projectiles
+    };
+  }
+
+  return {
+    nextProjectileId: state.nextProjectileId + 1,
+    invaderFireCooldownMs: INVADER_FIRE_INTERVAL_MS,
+    projectiles: [
+      ...state.projectiles,
+      createInvaderProjectile(state, firingInvader)
+    ]
   };
 }
 
