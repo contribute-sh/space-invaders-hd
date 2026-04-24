@@ -19,6 +19,9 @@ export type CanvasRenderer = {
 };
 
 const HUD_HEIGHT = 68;
+const PLAYER_INVULNERABILITY_BLINK_PERIOD_MS = 120;
+const PLAYER_INVULNERABILITY_HALO_COLOR = "rgba(123, 229, 255, 0.22)";
+const PLAYER_INVULNERABILITY_HALO_MARGIN = 12;
 const HUD_MONOSPACE_FONT =
   '600 18px ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace';
 
@@ -273,6 +276,21 @@ function drawProjectiles(
 
 function drawPlayer(context: CanvasRenderingContext2D, state: GameState): void {
   const { player } = state;
+  const playerIsInvulnerable = state.elapsedMs < player.invulnerableUntilMs;
+
+  if (playerIsInvulnerable) {
+    context.fillStyle = PLAYER_INVULNERABILITY_HALO_COLOR;
+    context.fillRect(
+      player.x - PLAYER_INVULNERABILITY_HALO_MARGIN,
+      player.y - PLAYER_INVULNERABILITY_HALO_MARGIN,
+      player.width + PLAYER_INVULNERABILITY_HALO_MARGIN * 2,
+      player.height + PLAYER_INVULNERABILITY_HALO_MARGIN * 2
+    );
+
+    if (!isInvulnerabilityBlinkVisible(state.elapsedMs, player.invulnerableUntilMs)) {
+      return;
+    }
+  }
 
   context.fillStyle = "rgba(56, 184, 255, 0.18)";
   context.beginPath();
@@ -459,4 +477,13 @@ function drawSpriteInBounds(
 
 function getFrameIndex(sprite: PreparedSprite, frameIndex: number): number {
   return Math.max(0, Math.min(frameIndex, sprite.frameCount - 1));
+}
+
+function isInvulnerabilityBlinkVisible(
+  elapsedMs: number,
+  invulnerableUntilMs: number
+): boolean {
+  const remainingInvulnerabilityMs = Math.max(0, invulnerableUntilMs - elapsedMs);
+
+  return Math.floor(remainingInvulnerabilityMs / PLAYER_INVULNERABILITY_BLINK_PERIOD_MS) % 2 === 0;
 }
