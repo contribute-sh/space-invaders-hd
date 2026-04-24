@@ -1,6 +1,7 @@
 import {
   EMPTY_INPUT,
   FORMATION_SPEED_BASE,
+  INVADER_COLS,
   INVADER_FIRE_INTERVAL_MS,
   LIFE_LOST_DURATION_MS,
   MARCH_FRAME_INTERVAL_MS,
@@ -156,6 +157,7 @@ function advanceLifeLost(
       frame: state.frame + 1,
       nextProjectileId: state.nextProjectileId,
       invaderFireCooldownMs,
+      invaderFireCursor: state.invaderFireCursor,
       elapsedMs: resolvedElapsedMs
     });
 
@@ -307,6 +309,7 @@ function advancePlaying(
         lives: Math.max(0, state.hud.lives - 1)
       },
       invaderFireCooldownMs: invaderProjectileBundle.invaderFireCooldownMs,
+      invaderFireCursor: invaderProjectileBundle.invaderFireCursor,
       transitionTimerMs: LIFE_LOST_DURATION_MS,
       frame: nextFrame,
       nextProjectileId: invaderProjectileBundle.nextProjectileId,
@@ -335,6 +338,7 @@ function advancePlaying(
         score
       },
       invaderFireCooldownMs: invaderProjectileBundle.invaderFireCooldownMs,
+      invaderFireCursor: invaderProjectileBundle.invaderFireCursor,
       transitionTimerMs: 0,
       frame: nextFrame,
       nextProjectileId: invaderProjectileBundle.nextProjectileId,
@@ -361,6 +365,7 @@ function advancePlaying(
     },
     frame: nextFrame,
     invaderFireCooldownMs: invaderProjectileBundle.invaderFireCooldownMs,
+    invaderFireCursor: invaderProjectileBundle.invaderFireCursor,
     transitionTimerMs: 0,
     nextProjectileId: invaderProjectileBundle.nextProjectileId,
     elapsedMs: nextElapsedMs
@@ -417,22 +422,25 @@ function maybeSpawnInvaderProjectile(
 ): {
   nextProjectileId: number;
   invaderFireCooldownMs: number;
+  invaderFireCursor: number;
   projectile: Projectile | undefined;
 } {
   if (invaderFireCooldownMs > 0) {
     return {
       nextProjectileId,
       invaderFireCooldownMs,
+      invaderFireCursor: state.invaderFireCursor,
       projectile: undefined
     };
   }
 
-  const firingInvader = selectFiringInvader(invaders);
+  const firingSelection = selectFiringInvader(invaders, state.invaderFireCursor);
 
-  if (firingInvader === undefined) {
+  if (firingSelection === undefined) {
     return {
       nextProjectileId,
       invaderFireCooldownMs,
+      invaderFireCursor: state.invaderFireCursor,
       projectile: undefined
     };
   }
@@ -440,12 +448,13 @@ function maybeSpawnInvaderProjectile(
   return {
     nextProjectileId: nextProjectileId + 1,
     invaderFireCooldownMs: INVADER_FIRE_INTERVAL_MS,
+    invaderFireCursor: firingSelection.nextCursor,
     projectile: createInvaderProjectile(
       {
         ...state,
         nextProjectileId
       },
-      firingInvader
+      firingSelection.invader
     )
   };
 }
@@ -743,20 +752,56 @@ function hasInvaderBreached(invaders: Invader[], player: GameState["player"]): b
   return false;
 }
 
-function selectFiringInvader(invaders: Invader[]): Invader | undefined {
+function selectFiringInvader(
+  invaders: Invader[],
+  invaderFireCursor: number
+):
+  | {
+      invader: Invader;
+      nextCursor: number;
+    }
+  | undefined {
+  const occupiedColumns = [...new Set(invaders.map((invader) => invader.col))].sort(
+    (left, right) => left - right
+  );
+
+  if (occupiedColumns.length === 0) {
+    return undefined;
+  }
+
+  const normalizedCursor = normalizeInvaderFireCursor(invaderFireCursor);
+  const firstOccupiedColumn = occupiedColumns[0];
+
+  if (firstOccupiedColumn === undefined) {
+    return undefined;
+  }
+
+  const firingColumn =
+    occupiedColumns.find((col) => col >= normalizedCursor) ?? firstOccupiedColumn;
   let firingInvader: Invader | undefined;
 
   for (const invader of invaders) {
-    if (
-      firingInvader === undefined ||
-      invader.col < firingInvader.col ||
-      (invader.col === firingInvader.col && invader.row > firingInvader.row)
-    ) {
+    if (invader.col !== firingColumn) {
+      continue;
+    }
+
+    if (firingInvader === undefined || invader.row > firingInvader.row) {
       firingInvader = invader;
     }
   }
 
-  return firingInvader;
+  if (firingInvader === undefined) {
+    return undefined;
+  }
+
+  return {
+    invader: firingInvader,
+    nextCursor: (firingColumn + 1) % INVADER_COLS
+  };
+}
+
+function normalizeInvaderFireCursor(invaderFireCursor: number): number {
+  return ((invaderFireCursor % INVADER_COLS) + INVADER_COLS) % INVADER_COLS;
 }
 
 function intersects(a: Rect, b: Rect): boolean {
