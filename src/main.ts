@@ -16,125 +16,162 @@ import { createVisibilityPauseController } from "./visibility";
 
 const FIXED_TIMESTEP_MS = 1000 / 60;
 type RuntimeRenderFlags = Parameters<CanvasRenderer["render"]>[1];
+type KeyboardController = ReturnType<typeof createKeyboardController>;
 
-const canvas = document.querySelector<HTMLCanvasElement>("#game");
+export function bootstrap(
+  options: {
+    beforeUnloadTarget?: Pick<Window, "addEventListener">;
+    createLoop?: typeof createFixedStepLoop;
+    createVisibilityPauseController?: typeof createVisibilityPauseController;
+    deriveSfxEvents?: typeof deriveSfxEvents;
+    findCanvas?: () => HTMLCanvasElement | null;
+    highScoreStore?: ReturnType<typeof createHighScoreStore>;
+    initialState?: GameState;
+    isHidden?: () => boolean;
+    keyboard?: KeyboardController;
+    keyboardTarget?: Window;
+    muteStore?: ReturnType<typeof createMuteStore>;
+    renderer?: CanvasRenderer;
+    sfx?: ReturnType<typeof createSfxController>;
+    step?: (state: GameState, dtMs: number, input: Input) => GameState;
+    storage?: Storage;
+    visibilityTarget?: Pick<Document, "addEventListener" | "removeEventListener">;
+  } = {}
+) {
+  const resolveHidden = options.isHidden ?? (() => getDefaultDocument().hidden);
+  const renderer =
+    options.renderer ?? createRenderer(getRequiredCanvas(options.findCanvas));
+  const keyboard =
+    options.keyboard ??
+    createKeyboardController(options.keyboardTarget ?? getDefaultWindow());
+  const sfx = options.sfx ?? createSfxController();
+  const muteStore = options.muteStore ?? createMuteStore(options.storage);
+  const highScoreStore =
+    options.highScoreStore ?? createHighScoreStore(options.storage);
+  const createLoop = options.createLoop ?? createFixedStepLoop;
+  const createVisibilityController =
+    options.createVisibilityPauseController ?? createVisibilityPauseController;
+  const advanceGameState = options.step ?? step;
+  const deriveAudioEvents = options.deriveSfxEvents ?? deriveSfxEvents;
+  const visibilityTarget = options.visibilityTarget ?? getDefaultDocument();
+  const beforeUnloadTarget =
+    options.beforeUnloadTarget ?? getDefaultWindow();
 
-if (canvas === null) {
-  throw new Error("Game canvas not found.");
-}
+  let state = options.initialState ?? createInitialGameState();
+  let bootstrapping = true;
+  let audioAttempted = false;
+  let frameInput: Input = keyboard.snapshot();
 
-const renderer = createRenderer(canvas);
-const keyboard = createKeyboardController(window);
-const sfx = createSfxController();
-const muteStore = createMuteStore();
-const highScoreStore = createHighScoreStore();
-
-let state = createInitialGameState();
-let bootstrapping = true;
-let audioAttempted = false;
-let frameInput: Input = keyboard.snapshot();
-
-sfx.setMuted(muteStore.isMuted());
-renderer.render(state, createRenderFlags(muteStore.isMuted()));
-bootstrapping = false;
-maybeArmAudio(state.phase, frameInput);
-
-const visibilityPauseController = createVisibilityPauseController({
-  target: document,
-  isHidden: () => document.hidden,
-  onHide: () => {
-    if (state.phase !== "playing") {
-      return;
-    }
-
-    advanceState(0, {
-      ...EMPTY_INPUT,
-      pausePressed: true
-    });
-  }
-});
-
-const loop = createFixedStepLoop({
-  stepMs: FIXED_TIMESTEP_MS,
-  onStep: ({ dtMs, firstStepOfFrame }) => {
-    const stepInput = firstStepOfFrame
-      ? frameInput
-      : {
-          ...frameInput,
-          firePressed: false,
-          pausePressed: false,
-          mutePressed: false
-        };
-    advanceState(dtMs, stepInput);
-  },
-  onRender: () => {
-    frameInput = keyboard.snapshot();
-
-    if (frameInput.mutePressed) {
-      muteStore.toggle();
-      sfx.setMuted(muteStore.isMuted());
-    }
-
-    maybeArmAudio(state.phase, frameInput);
-    renderer.render(state, createRenderFlags(muteStore.isMuted()));
-  }
-});
-
-window.addEventListener("beforeunload", () => {
-  loop.stop();
-  keyboard.dispose();
-  visibilityPauseController.dispose();
-});
-
-loop.start();
-
-function maybeArmAudio(phase: GameState["phase"], input: Input): void {
-  if (audioAttempted) {
-    return;
-  }
-
-  const leavesOverlay =
-    ((phase === "start" || phase === "waveClear" || phase === "gameOver") &&
-      input.firePressed) ||
-    (phase === "paused" && input.pausePressed);
-
-  if (!leavesOverlay) {
-    return;
-  }
-
-  audioAttempted = true;
-  void sfx.arm();
-}
-
-function advanceState(dtMs: number, input: Input): void {
-  const previousState = state;
-  state = step(state, dtMs, input);
-  maybeRecordHighScore(state.hud.score);
-  playDerivedEvents(previousState, state);
-}
-
-function playDerivedEvents(previousState: GameState, nextState: GameState): void {
-  for (const event of deriveSfxEvents(previousState, nextState)) {
-    sfx.play(event);
-  }
-}
-
-function maybeRecordHighScore(score: number): void {
-  if (score <= highScoreStore.getHighScore()) {
-    return;
-  }
-
-  highScoreStore.recordScore(score);
-}
-
-function createRenderFlags(muted: boolean): RuntimeRenderFlags {
-  return {
+  const createRenderFlags = (): RuntimeRenderFlags => ({
     bootstrapping,
-    muted,
+    muted: muteStore.isMuted(),
     highScore: pickDisplayHighScore(
       highScoreStore.getHighScore(),
       state.hud.score
     )
+  });
+
+  const maybeArmAudio = (phase: GameState["phase"], input: Input): void => {
+    if (audioAttempted) {
+      return;
+    }
+
+    const leavesOverlay =
+      ((phase === "start" || phase === "waveClear" || phase === "gameOver") &&
+        input.firePressed) ||
+      (phase === "paused" && input.pausePressed);
+
+    if (!leavesOverlay) {
+      return;
+    }
+
+    audioAttempted = true;
+    void sfx.arm();
+  };
+
+  const maybeRecordHighScore = (score: number): void => {
+    if (score <= highScoreStore.getHighScore()) {
+      return;
+    }
+
+    highScoreStore.recordScore(score);
+  };
+
+  const playDerivedEvents = (
+    previousState: GameState,
+    nextState: GameState
+  ): void => {
+    for (const event of deriveAudioEvents(previousState, nextState)) {
+      sfx.play(event);
+    }
+  };
+
+  const advanceState = (dtMs: number, input: Input): void => {
+    const previousState = state;
+    state = advanceGameState(state, dtMs, input);
+    maybeRecordHighScore(state.hud.score);
+    playDerivedEvents(previousState, state);
+  };
+
+  sfx.setMuted(muteStore.isMuted());
+  renderer.render(state, createRenderFlags());
+  bootstrapping = false;
+  maybeArmAudio(state.phase, frameInput);
+
+  const visibilityPauseController = createVisibilityController({
+    target: visibilityTarget,
+    isHidden: resolveHidden,
+    onHide: () => {
+      if (state.phase !== "playing") {
+        return;
+      }
+
+      advanceState(0, {
+        ...EMPTY_INPUT,
+        pausePressed: true
+      });
+    }
+  });
+
+  const loop = createLoop({
+    stepMs: FIXED_TIMESTEP_MS,
+    onStep: ({ dtMs, firstStepOfFrame }) => {
+      const stepInput = firstStepOfFrame
+        ? frameInput
+        : {
+            ...frameInput,
+            firePressed: false,
+            pausePressed: false,
+            mutePressed: false
+          };
+      advanceState(dtMs, stepInput);
+    },
+    onRender: () => {
+      frameInput = keyboard.snapshot();
+
+      if (frameInput.mutePressed) {
+        muteStore.toggle();
+        sfx.setMuted(muteStore.isMuted());
+      }
+
+      maybeArmAudio(state.phase, frameInput);
+      renderer.render(state, createRenderFlags());
+    },
+    isHidden: resolveHidden
+  });
+
+  const dispose = (): void => {
+    loop.stop();
+    keyboard.dispose();
+    visibilityPauseController.dispose();
+  };
+
+  beforeUnloadTarget.addEventListener("beforeunload", dispose);
+  loop.start();
+
+  return {
+    dispose,
+    loop
   };
 }
 
@@ -152,7 +189,7 @@ function renderFallback(title: string, detail: string): void {
   `;
 }
 
-function createRenderer(canvasElement: HTMLCanvasElement) {
+function createRenderer(canvasElement: HTMLCanvasElement): CanvasRenderer {
   try {
     return createCanvasRenderer(canvasElement);
   } catch (error) {
@@ -162,4 +199,39 @@ function createRenderer(canvasElement: HTMLCanvasElement) {
     );
     throw error;
   }
+}
+
+function getDefaultDocument(): Document {
+  if (typeof document === "undefined") {
+    throw new Error("Document is required to bootstrap the game.");
+  }
+
+  return document;
+}
+
+function getDefaultWindow(): Window {
+  if (typeof window === "undefined") {
+    throw new Error("Window is required to bootstrap the game.");
+  }
+
+  return window;
+}
+
+function getRequiredCanvas(
+  findCanvas: (() => HTMLCanvasElement | null) | undefined
+): HTMLCanvasElement {
+  const canvas =
+    findCanvas === undefined
+      ? getDefaultDocument().querySelector<HTMLCanvasElement>("#game")
+      : findCanvas();
+
+  if (canvas === null) {
+    throw new Error("Game canvas not found.");
+  }
+
+  return canvas;
+}
+
+if (typeof window !== "undefined" && typeof document !== "undefined") {
+  bootstrap();
 }
