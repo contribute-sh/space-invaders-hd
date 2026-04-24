@@ -1,5 +1,5 @@
 import type { AudioStatus } from "../audio/sfx";
-import type { GameState, Invader, Projectile } from "../game/state";
+import type { GameState, Invader, Projectile, Shield } from "../game/state";
 import { CONTROL_FOOTER, OVERLAY_PROMPTS } from "../input/bindings";
 import {
   getSprite,
@@ -115,6 +115,7 @@ function drawScene(
   drawBackground(context, state);
   drawHud(context, state, flags);
   drawInvaders(context, state.invaders, state.marchFrame);
+  drawShields(context, state.shields);
   drawProjectiles(context, state.projectiles);
   drawPlayer(context, state);
   drawFloor(context, state);
@@ -284,9 +285,15 @@ function drawProjectiles(
   context: CanvasRenderingContext2D,
   projectiles: Projectile[]
 ): void {
-  const projectileSprite = getSprite("player-projectile");
+  const playerProjectileSprite = getSprite("player-projectile");
+  const invaderProjectileSprite = getSprite("invader-projectile");
 
   for (const projectile of projectiles) {
+    const projectileSprite =
+      projectile.owner === "invader"
+        ? invaderProjectileSprite
+        : playerProjectileSprite;
+
     context.fillStyle = "rgba(114, 226, 255, 0.25)";
     roundRect(context, projectile.x - 3, projectile.y - 6, projectile.width + 6, projectile.height + 12, 6);
     context.fill();
@@ -299,6 +306,31 @@ function drawProjectiles(
       projectile.width,
       projectile.height
     );
+  }
+}
+
+function drawShields(
+  context: CanvasRenderingContext2D,
+  shields: Shield[]
+): void {
+  const shieldCellSprite = getSprite("shield-cell");
+
+  for (const shield of shields) {
+    for (const cell of shield.cells) {
+      if (!cell.alive) {
+        continue;
+      }
+
+      drawSpriteInBounds(
+        context,
+        shieldCellSprite,
+        0,
+        cell.x,
+        cell.y,
+        cell.width,
+        cell.height
+      );
+    }
   }
 }
 

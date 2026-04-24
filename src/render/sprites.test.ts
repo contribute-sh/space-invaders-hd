@@ -4,8 +4,10 @@ import { SPRITE_DESCRIPTOR_REGISTRY } from "./sprite-data";
 import {
   EMPTY_PIXEL,
   INVADER_ROW_DESCRIPTORS,
+  INVADER_PROJECTILE_DESCRIPTOR,
   PLAYER_PROJECTILE_DESCRIPTOR,
   PLAYER_SHIP_DESCRIPTOR,
+  SHIELD_CELL_DESCRIPTOR,
   SPRITE_DESCRIPTORS,
   createSpriteSheet,
   getSprite,
@@ -81,12 +83,16 @@ function countFilledPixels(frame: readonly string[]): number {
 }
 
 describe("createSpriteSheet", () => {
-  it("includes descriptors for the player, each invader row, and the projectile", () => {
-    expect(SPRITE_DESCRIPTORS).toHaveLength(7);
+  it("includes descriptors for the player, each invader row, the shield cell, and both projectile types", () => {
+    expect(SPRITE_DESCRIPTORS).toHaveLength(9);
     expect(INVADER_ROW_DESCRIPTORS).toHaveLength(5);
 
     expect(createSpriteSheet(PLAYER_SHIP_DESCRIPTOR).getFrameCount()).toBe(1);
+    expect(createSpriteSheet(SHIELD_CELL_DESCRIPTOR).getFrameCount()).toBe(1);
     expect(createSpriteSheet(PLAYER_PROJECTILE_DESCRIPTOR).getFrameCount()).toBe(1);
+    expect(createSpriteSheet(INVADER_PROJECTILE_DESCRIPTOR).getFrameCount()).toBe(
+      1
+    );
 
     for (const descriptor of INVADER_ROW_DESCRIPTORS) {
       expect(createSpriteSheet(descriptor).getFrameCount()).toBe(2);
@@ -253,9 +259,14 @@ describe("getSprite", () => {
       PLAYER_SHIP_DESCRIPTOR,
       2
     );
+    expectPreparedSpriteToMatchDescriptor("shield-cell", SHIELD_CELL_DESCRIPTOR);
     expectPreparedSpriteToMatchDescriptor(
       "player-projectile",
       PLAYER_PROJECTILE_DESCRIPTOR
+    );
+    expectPreparedSpriteToMatchDescriptor(
+      "invader-projectile",
+      INVADER_PROJECTILE_DESCRIPTOR
     );
 
     for (const descriptor of INVADER_ROW_DESCRIPTORS) {
