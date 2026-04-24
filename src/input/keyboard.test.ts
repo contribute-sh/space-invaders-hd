@@ -176,6 +176,47 @@ describe("createKeyboardController", () => {
     });
   }
 
+  it("consumes returned fire, pause, and mute edges on the next snapshot", () => {
+    const heldEdgeCases = [
+      {
+        code: "Space",
+        edgeField: "firePressed",
+        heldField: "fireHeld"
+      },
+      {
+        code: "KeyP",
+        edgeField: "pausePressed",
+        heldField: "pauseHeld"
+      }
+    ] as const;
+
+    for (const { code, edgeField, heldField } of heldEdgeCases) {
+      const target = createTarget();
+      const controller = createKeyboardController(target);
+
+      dispatchKeyDown(target, code);
+
+      const firstSnapshot = controller.snapshot();
+      const secondSnapshot = controller.snapshot();
+
+      expect(firstSnapshot[edgeField]).toBe(true);
+      expect(firstSnapshot[heldField]).toBe(true);
+      expect(secondSnapshot[edgeField]).toBe(false);
+      expect(secondSnapshot[heldField]).toBe(true);
+    }
+
+    const muteTarget = createTarget();
+    const muteController = createKeyboardController(muteTarget);
+
+    dispatchKeyDown(muteTarget, "KeyM");
+
+    const firstMuteSnapshot = muteController.snapshot();
+    const secondMuteSnapshot = muteController.snapshot();
+
+    expect(firstMuteSnapshot.mutePressed).toBe(true);
+    expect(secondMuteSnapshot.mutePressed).toBe(false);
+  });
+
   it("does not re-emit the mute edge on auto-repeat keydown and re-arms after keyup", () => {
     const target = createTarget();
     const controller = createKeyboardController(target);
