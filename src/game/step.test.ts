@@ -89,16 +89,21 @@ function createShieldProjectile(
   row: number,
   col: number,
   id: number,
-  velocityY: number
+  velocityY: number,
+  owner: "player" | "invader" = "player"
 ) {
   const cell = getShieldCell(state, 0, row, col);
+  const width =
+    owner === "player" ? PROJECTILE_WIDTH : INVADER_PROJECTILE_WIDTH;
+  const height =
+    owner === "player" ? PROJECTILE_HEIGHT : INVADER_PROJECTILE_HEIGHT;
   return {
     id,
-    owner: "player" as const,
-    x: cell.x + (cell.width - PROJECTILE_WIDTH) / 2,
-    y: velocityY < 0 ? cell.y + cell.height + 4 : cell.y - PROJECTILE_HEIGHT - 4,
-    width: PROJECTILE_WIDTH,
-    height: PROJECTILE_HEIGHT,
+    owner,
+    x: cell.x + (cell.width - width) / 2,
+    y: velocityY < 0 ? cell.y + cell.height + 4 : cell.y - height - 4,
+    width,
+    height,
     velocityY,
     active: true
   };
@@ -283,6 +288,114 @@ describe("step", () => {
     expect(next.state.projectiles).toHaveLength(0);
     expect(getShieldCell(next.state, 0, targetRow, targetCol).alive).toBe(false);
     expect(countAliveShieldCells(next.state)).toBe(countAliveShieldCells(base) - 1);
+  });
+
+  describe("shield collisions", () => {
+    it("removes a player projectile that strikes a live shield cell", () => {
+      const targetRow = SHIELD_CELL_ROWS - 1;
+      const targetCol = 2;
+      const base = createPlayingState();
+      const state = {
+        ...base,
+        projectiles: [createShieldProjectile(base, targetRow, targetCol, 1, PROJECTILE_SPEED)],
+        nextProjectileId: 2
+      };
+
+      const next = step(state, SHIELD_HIT_DT_MS, EMPTY_INPUT);
+
+      expect(getShieldCell(next, 0, targetRow, targetCol).alive).toBe(false);
+      expect(next.projectiles).toHaveLength(0);
+    });
+
+    it("removes an invader projectile that strikes a live shield cell", () => {
+      const targetRow = 0;
+      const targetCol = 2;
+      const base = createPlayingState();
+      const state = {
+        ...base,
+        projectiles: [
+          createShieldProjectile(
+            base,
+            targetRow,
+            targetCol,
+            1,
+            INVADER_PROJECTILE_SPEED,
+            "invader"
+          )
+        ],
+        nextProjectileId: 2
+      };
+
+      const next = step(state, SHIELD_HIT_DT_MS, EMPTY_INPUT);
+
+      expect(getShieldCell(next, 0, targetRow, targetCol).alive).toBe(false);
+      expect(next.projectiles).toHaveLength(0);
+    });
+
+    it("lets a second projectile pass through a shield cell that was already destroyed", () => {
+      const targetRow = SHIELD_CELL_ROWS - 1;
+      const targetCol = 2;
+      const base = createPlayingState();
+      const afterFirstHit = step(
+        {
+          ...base,
+          projectiles: [createShieldProjectile(base, targetRow, targetCol, 1, PROJECTILE_SPEED)],
+          nextProjectileId: 2
+        },
+        SHIELD_HIT_DT_MS,
+        EMPTY_INPUT
+      );
+      const secondProjectile = createShieldProjectile(
+        afterFirstHit,
+        targetRow,
+        targetCol,
+        2,
+        PROJECTILE_SPEED
+      );
+
+      const next = step(
+        {
+          ...afterFirstHit,
+          projectiles: [secondProjectile],
+          nextProjectileId: 3
+        },
+        SHIELD_HIT_DT_MS,
+        EMPTY_INPUT
+      );
+
+      expect(getShieldCell(next, 0, targetRow, targetCol).alive).toBe(false);
+      expect(countAliveShieldCells(next)).toBe(countAliveShieldCells(afterFirstHit));
+      expect(next.projectiles[0]?.id).toBe(secondProjectile.id);
+    });
+
+    it("does not consume a player projectile that passes through a dead shield cell", () => {
+      const targetRow = SHIELD_CELL_ROWS - 1;
+      const targetCol = 2;
+      const base = createPlayingState();
+      const cell = getShieldCell(base, 0, targetRow, targetCol);
+      const stateWithDeadCell = setShieldCellAlive(base, cell.id, false);
+      const projectile = createShieldProjectile(
+        stateWithDeadCell,
+        targetRow,
+        targetCol,
+        1,
+        PROJECTILE_SPEED
+      );
+
+      const next = step(
+        {
+          ...stateWithDeadCell,
+          projectiles: [projectile],
+          nextProjectileId: 2
+        },
+        SHIELD_HIT_DT_MS,
+        EMPTY_INPUT
+      );
+
+      expect(getShieldCell(next, 0, targetRow, targetCol).alive).toBe(false);
+      expect(countAliveShieldCells(next)).toBe(countAliveShieldCells(stateWithDeadCell));
+      expect(next.projectiles[0]?.id).toBe(projectile.id);
+    });
   });
 
   it("lets a projectile continue through a dead shield-cell gap", () => {
