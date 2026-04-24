@@ -10,9 +10,9 @@ export type Input = {
   moveX: -1 | 0 | 1;
   firePressed: boolean;
   pausePressed: boolean;
-  fireHeld?: boolean;
-  pauseHeld?: boolean;
-  mutePressed?: boolean;
+  fireHeld: boolean;
+  pauseHeld: boolean;
+  mutePressed: boolean;
 };
 
 export type Arena = {

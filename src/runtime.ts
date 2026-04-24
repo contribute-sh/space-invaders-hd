@@ -99,9 +99,9 @@ function hasObservedUserInput(input: Input): boolean {
     input.moveX !== 0 ||
     input.firePressed ||
     input.pausePressed ||
-    input.fireHeld === true ||
-    input.pauseHeld === true ||
-    input.mutePressed === true
+    input.fireHeld ||
+    input.pauseHeld ||
+    input.mutePressed
   );
 }
 
