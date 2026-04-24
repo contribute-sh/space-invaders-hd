@@ -7,6 +7,7 @@ import {
   type SpriteDescriptor,
   type SpriteSheet
 } from "./sprites";
+import { applyViewport, computeViewport, type Viewport } from "./viewport";
 
 export type RenderFlags = {
   bootstrapping: boolean;
@@ -48,30 +49,79 @@ export function createCanvasRenderer(canvas: HTMLCanvasElement): CanvasRenderer 
     throw new Error("Canvas 2D is unavailable.");
   }
 
+  const viewportContext = {
+    canvas: {
+      height: canvas.height,
+      width: canvas.width
+    },
+    setTransform: context.setTransform.bind(context)
+  };
+
   return {
     render: (state, flags) => {
-      syncCanvasSize(canvas, context, state.arena.width, state.arena.height);
+      const viewport = computeViewport(
+        getViewportWindow(canvas, state.arena.width, state.arena.height),
+        canvas,
+        state.arena.width,
+        state.arena.height
+      );
+
+      syncCanvasViewport(canvas, viewport);
+      clearViewport(context, viewport);
+      applyViewport(viewportContext, viewport);
       drawScene(context, state, flags);
     }
   };
 }
 
-function syncCanvasSize(
+function getViewportWindow(
   canvas: HTMLCanvasElement,
-  context: CanvasRenderingContext2D,
   logicalWidth: number,
   logicalHeight: number
-): void {
-  const dpr = window.devicePixelRatio || 1;
-  const renderWidth = Math.round(logicalWidth * dpr);
-  const renderHeight = Math.round(logicalHeight * dpr);
+): Parameters<typeof computeViewport>[0] {
+  const fallbackWidth = canvas.clientWidth > 0 ? canvas.clientWidth : logicalWidth;
+  const fallbackHeight =
+    canvas.clientHeight > 0 ? canvas.clientHeight : logicalHeight;
+  const viewportWindow =
+    typeof globalThis.window === "undefined" ? undefined : globalThis.window;
 
-  if (canvas.width !== renderWidth || canvas.height !== renderHeight) {
-    canvas.width = renderWidth;
-    canvas.height = renderHeight;
+  return {
+    devicePixelRatio: viewportWindow?.devicePixelRatio,
+    innerWidth: viewportWindow?.innerWidth ?? fallbackWidth,
+    innerHeight: viewportWindow?.innerHeight ?? fallbackHeight
+  };
+}
+
+function syncCanvasViewport(
+  canvas: HTMLCanvasElement,
+  viewport: Viewport
+): void {
+  if (
+    canvas.width !== viewport.backingWidth ||
+    canvas.height !== viewport.backingHeight
+  ) {
+    canvas.width = viewport.backingWidth;
+    canvas.height = viewport.backingHeight;
   }
 
-  context.setTransform(dpr, 0, 0, dpr, 0, 0);
+  const cssWidth = `${viewport.cssWidth}px`;
+  const cssHeight = `${viewport.cssHeight}px`;
+
+  if (canvas.style.width !== cssWidth) {
+    canvas.style.width = cssWidth;
+  }
+
+  if (canvas.style.height !== cssHeight) {
+    canvas.style.height = cssHeight;
+  }
+}
+
+function clearViewport(
+  context: CanvasRenderingContext2D,
+  viewport: Viewport
+): void {
+  context.setTransform(1, 0, 0, 1, 0, 0);
+  context.clearRect(0, 0, viewport.backingWidth, viewport.backingHeight);
 }
 
 function drawScene(
