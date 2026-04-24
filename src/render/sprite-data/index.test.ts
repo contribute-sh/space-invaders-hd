@@ -1,12 +1,51 @@
 import { describe, expect, it } from "vitest";
 
+import {
+  INVADER_PROJECTILE_HEIGHT,
+  INVADER_PROJECTILE_WIDTH,
+  PROJECTILE_HEIGHT,
+  PROJECTILE_WIDTH
+} from "../../game/state";
 import { getSprite } from "../sprites";
+import type { SpriteDescriptor } from "../sprites";
 import {
   INVADER_PROJECTILE_DESCRIPTOR,
   PLAYER_PROJECTILE_DESCRIPTOR,
   SHIELD_CELL_DESCRIPTOR,
   SPRITE_DESCRIPTOR_REGISTRY
 } from "./index";
+
+function expectSpriteFootprintToMatchHitbox(
+  descriptor: SpriteDescriptor,
+  expectedWidth: number,
+  expectedHeight: number
+): void {
+  expect(descriptor.frames.length).toBeGreaterThanOrEqual(1);
+
+  const firstFrame = descriptor.frames[0];
+  const frameRowCount = firstFrame?.length ?? 0;
+
+  expect(frameRowCount).toBeGreaterThan(0);
+
+  let maxRowLength = 0;
+
+  for (const frame of descriptor.frames) {
+    expect(frame.length).toBe(frameRowCount);
+
+    const frameRowLength = frame[0]?.length ?? 0;
+
+    expect(frameRowLength).toBeGreaterThan(0);
+
+    for (const row of frame) {
+      expect(row.length).toBe(frameRowLength);
+    }
+
+    maxRowLength = Math.max(maxRowLength, frameRowLength);
+  }
+
+  expect(maxRowLength * descriptor.pixelSize).toBe(expectedWidth);
+  expect(frameRowCount * descriptor.pixelSize).toBe(expectedHeight);
+}
 
 describe("SPRITE_DESCRIPTOR_REGISTRY", () => {
   it("registers and resolves shield-cell and invader-projectile through the public path", () => {
@@ -35,5 +74,23 @@ describe("SPRITE_DESCRIPTOR_REGISTRY", () => {
     expect(
       [...playerColors].some((color) => invaderColors.has(color))
     ).toBe(false);
+  });
+});
+
+describe("projectile sprite footprints", () => {
+  it("matches the player projectile sprite dimensions to the simulation hitbox", () => {
+    expectSpriteFootprintToMatchHitbox(
+      PLAYER_PROJECTILE_DESCRIPTOR,
+      PROJECTILE_WIDTH,
+      PROJECTILE_HEIGHT
+    );
+  });
+
+  it("matches the invader projectile sprite dimensions to the simulation hitbox", () => {
+    expectSpriteFootprintToMatchHitbox(
+      INVADER_PROJECTILE_DESCRIPTOR,
+      INVADER_PROJECTILE_WIDTH,
+      INVADER_PROJECTILE_HEIGHT
+    );
   });
 });
