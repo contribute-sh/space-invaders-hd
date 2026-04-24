@@ -1,3 +1,5 @@
+import { createAudioEngine, type AudioEngine, type ScheduleToneOptions } from "./engine";
+
 export type SfxName = "shoot" | "hit" | "playerDeath" | "waveClear";
 export type AudioStatus = "idle" | "ready" | "muted" | "unavailable";
 
@@ -9,105 +11,43 @@ export type SfxController = {
 };
 
 type Tone = {
-  frequency: number;
-  duration: number;
-  gain: number;
-  type: OscillatorType;
+  frequency: ScheduleToneOptions["frequency"];
+  duration: ScheduleToneOptions["duration"];
+  gain: ScheduleToneOptions["gain"];
+  type: ScheduleToneOptions["type"];
 };
+
+type SfxEngine = Pick<AudioEngine, "arm" | "getStatus" | "scheduleTone" | "setMuted">;
 
 const SFX_COOLDOWN_SECONDS = 0.03;
 
-export function createSfxController(): SfxController {
-  let context: AudioContext | null = null;
-  let status: Exclude<AudioStatus, "muted"> = "idle";
-  let muted = false;
-  const lastPlayedAtByName = new Map<SfxName, number>();
-
-  const getStatus = (): AudioStatus => {
-    if (status === "unavailable") {
-      return "unavailable";
-    }
-
-    if (muted) {
-      return "muted";
-    }
-
-    return status;
-  };
-
+export function createSfxController(
+  engine: SfxEngine = createAudioEngine()
+): SfxController {
   return {
-    arm: async () => {
-      try {
-        if (context === null) {
-          context = new AudioContext();
-          lastPlayedAtByName.clear();
-        }
-        if (context.state === "suspended") {
-          await context.resume();
-        }
-        status = "ready";
-      } catch {
-        context = null;
-        status = "unavailable";
-      }
-    },
-    getStatus,
+    arm: engine.arm,
+    getStatus: engine.getStatus,
     play: (name) => {
-      const currentStatus = getStatus();
-
-      if (
-        currentStatus === "muted" ||
-        currentStatus === "unavailable" ||
-        status !== "ready" ||
-        context === null
-      ) {
+      if (engine.getStatus() !== "ready") {
         return;
       }
 
-      const now = context.currentTime;
-      const lastPlayedAt = lastPlayedAtByName.get(name);
-
-      if (
-        lastPlayedAt !== undefined &&
-        now - lastPlayedAt < SFX_COOLDOWN_SECONDS
-      ) {
-        return;
-      }
-
-      lastPlayedAtByName.set(name, now);
       const tones = getTonePattern(name);
       let offset = 0;
 
-      for (const tone of tones) {
-        playTone(context, now + offset, tone);
+      for (const [index, tone] of tones.entries()) {
+        engine.scheduleTone({
+          ...tone,
+          ...(offset > 0 ? { startOffset: offset } : {}),
+          ...(index === 0
+            ? { tag: name, cooldownSeconds: SFX_COOLDOWN_SECONDS }
+            : {})
+        });
         offset += tone.duration * 0.68;
       }
     },
-    setMuted: (value) => {
-      muted = value;
-    }
+    setMuted: engine.setMuted
   };
-}
-
-function playTone(
-  context: AudioContext,
-  startTime: number,
-  tone: Tone
-): void {
-  const oscillator = context.createOscillator();
-  const gain = context.createGain();
-  const endTime = startTime + tone.duration;
-
-  oscillator.type = tone.type;
-  oscillator.frequency.setValueAtTime(tone.frequency, startTime);
-  gain.gain.setValueAtTime(0.0001, startTime);
-  gain.gain.exponentialRampToValueAtTime(tone.gain, startTime + 0.02);
-  gain.gain.exponentialRampToValueAtTime(0.0001, endTime);
-
-  oscillator.connect(gain);
-  gain.connect(context.destination);
-  oscillator.start(startTime);
-  oscillator.stop(endTime + 0.02);
 }
 
 function getTonePattern(name: SfxName): Tone[] {

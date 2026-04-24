@@ -8,6 +8,7 @@ import {
   type Mock
 } from "vitest";
 
+import type { AudioEngineStatus, ScheduleToneOptions } from "./engine";
 import { createSfxController, type SfxName } from "./sfx";
 
 type MockDestination = {
@@ -69,6 +70,13 @@ type MockWebAudioHarness = {
   readonly gainConstructor: Mock<() => MockGainNode>;
 };
 
+type MockSfxEngine = {
+  arm: Mock<() => Promise<void>>;
+  getStatus: Mock<() => AudioEngineStatus>;
+  scheduleTone: Mock<(options: ScheduleToneOptions) => void>;
+  setMuted: Mock<(muted: boolean) => void>;
+};
+
 type MockOscillatorConstructor = new () => MockOscillatorNode;
 type MockGainConstructor = new () => MockGainNode;
 
@@ -78,7 +86,7 @@ const SFX_NAMES = [
   "playerDeath",
   "waveClear"
 ] as const satisfies readonly SfxName[];
-const AFTER_SFX_COOLDOWN_SECONDS = 0.031;
+const SFX_COOLDOWN_SECONDS = 0.03;
 
 let harness: MockWebAudioHarness;
 
@@ -204,6 +212,17 @@ function installMockWebAudio(
   return harness;
 }
 
+function createMockSfxEngine(
+  status: AudioEngineStatus = "ready"
+): MockSfxEngine {
+  return {
+    arm: vi.fn(async () => {}),
+    getStatus: vi.fn(() => status),
+    scheduleTone: vi.fn<(options: ScheduleToneOptions) => void>(),
+    setMuted: vi.fn<(muted: boolean) => void>()
+  };
+}
+
 function getLastContext(mockHarness: MockWebAudioHarness): MockAudioContext {
   const context = mockHarness.contexts.at(-1);
 
@@ -242,6 +261,21 @@ function getAudioParamCall(
   const [value, time] = call;
 
   return { value, time };
+}
+
+function getScheduledToneCall(
+  engine: MockSfxEngine,
+  index: number
+): ScheduleToneOptions {
+  const call = engine.scheduleTone.mock.calls[index];
+
+  if (call === undefined) {
+    throw new Error(`Expected scheduleTone call ${index + 1}.`);
+  }
+
+  const [options] = call;
+
+  return options;
 }
 
 function capturePlayback(
@@ -368,7 +402,7 @@ describe("createSfxController", () => {
     expect(controller.getStatus()).toBe("ready");
   });
 
-  it("reports unavailable when AudioContext construction fails and play becomes a no-op", async () => {
+  it("reports muted when AudioContext construction fails and play becomes a no-op", async () => {
     harness.throwOnAudioContextConstruction = true;
 
     const controller = createSfxController();
@@ -378,12 +412,12 @@ describe("createSfxController", () => {
     controller.setMuted(true);
 
     expect(harness.audioContextConstructor).toHaveBeenCalledTimes(1);
-    expect(controller.getStatus()).toBe("unavailable");
+    expect(controller.getStatus()).toBe("muted");
     expect(harness.oscillators).toHaveLength(0);
     expect(harness.gains).toHaveLength(0);
   });
 
-  it("reports unavailable when AudioContext.resume fails and only recovers through a fresh context", async () => {
+  it("reports muted when AudioContext.resume fails and can recover on a later arm", async () => {
     harness.throwOnResume = true;
 
     const controller = createSfxController();
@@ -392,14 +426,14 @@ describe("createSfxController", () => {
     controller.play("shoot");
 
     expect(harness.audioContextConstructor).toHaveBeenCalledTimes(1);
-    expect(controller.getStatus()).toBe("unavailable");
+    expect(controller.getStatus()).toBe("muted");
     expect(harness.oscillators).toHaveLength(0);
     expect(harness.gains).toHaveLength(0);
 
     harness.throwOnResume = false;
     await controller.arm();
 
-    expect(harness.audioContextConstructor).toHaveBeenCalledTimes(2);
+    expect(harness.audioContextConstructor).toHaveBeenCalledTimes(1);
     expect(controller.getStatus()).toBe("ready");
   });
 
@@ -409,7 +443,7 @@ describe("createSfxController", () => {
     controller.setMuted(true);
     await controller.arm();
 
-    expect(harness.audioContextConstructor).toHaveBeenCalledTimes(1);
+    expect(harness.audioContextConstructor).toHaveBeenCalledTimes(0);
     expect(controller.getStatus()).toBe("muted");
   });
 
@@ -481,88 +515,101 @@ describe("createSfxController", () => {
     expect(signatures.size).toBeGreaterThan(1);
   });
 
-  it("deduplicates repeated hit playback inside the cooldown window", async () => {
-    const controller = createSfxController();
-    await controller.arm();
-    const context = getLastContext(harness);
+  it("passes the shoot tone pattern through scheduleTone", () => {
+    const engine = createMockSfxEngine();
+    const controller = createSfxController(engine);
 
-    context.currentTime = 1;
-    controller.play("hit");
+    controller.play("shoot");
 
-    const createOscillatorCallsBeforeSecondPlay =
-      context.createOscillator.mock.calls.length;
+    expect(engine.getStatus).toHaveBeenCalledTimes(1);
+    expect(engine.scheduleTone).toHaveBeenCalledTimes(2);
 
-    controller.play("hit");
+    const firstTone = getScheduledToneCall(engine, 0);
+    const secondTone = getScheduledToneCall(engine, 1);
 
-    expect(
-      context.createOscillator.mock.calls.length -
-        createOscillatorCallsBeforeSecondPlay
-    ).toBe(0);
+    expect(firstTone.frequency).toBe(720);
+    expect(firstTone.duration).toBe(0.09);
+    expect(firstTone.gain).toBe(0.06);
+    expect(firstTone.type).toBe("square");
+    expect(firstTone.tag).toBe("shoot");
+    expect(firstTone.cooldownSeconds).toBe(SFX_COOLDOWN_SECONDS);
+    expect(firstTone.startOffset).toBeUndefined();
+
+    expect(secondTone.frequency).toBe(940);
+    expect(secondTone.duration).toBe(0.06);
+    expect(secondTone.gain).toBe(0.04);
+    expect(secondTone.type).toBe("triangle");
+    expect(secondTone.startOffset).toBeCloseTo(0.09 * 0.68);
+    expect(secondTone.tag).toBeUndefined();
+    expect(secondTone.cooldownSeconds).toBeUndefined();
   });
 
-  it("schedules hit playback again after the cooldown window elapses", async () => {
-    const controller = createSfxController();
-    await controller.arm();
-    const context = getLastContext(harness);
+  it.each(["idle", "muted"] as const)(
+    "does not call scheduleTone with an injected engine while %s",
+    (status) => {
+      const engine = createMockSfxEngine(status);
+      const controller = createSfxController(engine);
 
-    context.currentTime = 1;
-    const firstPlayback = capturePlayback(harness, controller, "hit");
+      controller.play("shoot");
 
-    context.currentTime += AFTER_SFX_COOLDOWN_SECONDS;
-    const secondPlayback = capturePlayback(harness, controller, "hit");
+      expect(engine.getStatus).toHaveBeenCalledTimes(1);
+      expect(engine.scheduleTone).not.toHaveBeenCalled();
+    }
+  );
 
-    expect(firstPlayback.oscillators.length).toBeGreaterThan(0);
-    expect(secondPlayback.oscillators.length).toBe(firstPlayback.oscillators.length);
-    expect(secondPlayback.gains.length).toBe(firstPlayback.gains.length);
-    expect(harness.oscillators).toHaveLength(
-      firstPlayback.oscillators.length + secondPlayback.oscillators.length
-    );
-    expect(harness.gains).toHaveLength(
-      firstPlayback.gains.length + secondPlayback.gains.length
-    );
+  it("tags only the first tone in a multi-tone effect with cooldown metadata", () => {
+    const engine = createMockSfxEngine();
+    const controller = createSfxController(engine);
 
-    firstPlayback.oscillators.forEach((oscillator, index) => {
-      expect(secondPlayback.oscillators[index]).not.toBe(oscillator);
-    });
-    firstPlayback.gains.forEach((gain, index) => {
-      expect(secondPlayback.gains[index]).not.toBe(gain);
-    });
+    controller.play("playerDeath");
+
+    expect(engine.scheduleTone).toHaveBeenCalledTimes(3);
+
+    const firstTone = getScheduledToneCall(engine, 0);
+    const secondTone = getScheduledToneCall(engine, 1);
+    const thirdTone = getScheduledToneCall(engine, 2);
+
+    expect(firstTone.frequency).toBe(220);
+    expect(firstTone.duration).toBe(0.16);
+    expect(firstTone.gain).toBe(0.08);
+    expect(firstTone.type).toBe("sawtooth");
+    expect(firstTone.tag).toBe("playerDeath");
+    expect(firstTone.cooldownSeconds).toBe(SFX_COOLDOWN_SECONDS);
+    expect(firstTone.startOffset).toBeUndefined();
+
+    expect(secondTone.frequency).toBe(160);
+    expect(secondTone.duration).toBe(0.2);
+    expect(secondTone.gain).toBe(0.07);
+    expect(secondTone.type).toBe("square");
+    expect(secondTone.startOffset).toBeCloseTo(0.16 * 0.68);
+    expect(secondTone.tag).toBeUndefined();
+    expect(secondTone.cooldownSeconds).toBeUndefined();
+
+    expect(thirdTone.frequency).toBe(110);
+    expect(thirdTone.duration).toBe(0.25);
+    expect(thirdTone.gain).toBe(0.05);
+    expect(thirdTone.type).toBe("triangle");
+    expect(thirdTone.startOffset).toBeCloseTo((0.16 + 0.2) * 0.68);
+    expect(thirdTone.tag).toBeUndefined();
+    expect(thirdTone.cooldownSeconds).toBeUndefined();
   });
 
-  it("tracks cooldowns independently for each SFX name", async () => {
-    const controller = createSfxController();
+  it("forwards arm, getStatus, and setMuted to the injected engine", async () => {
+    const engine = createMockSfxEngine("muted");
+    const controller = createSfxController(engine);
+
+    expect(controller.arm).toBe(engine.arm);
+    expect(controller.getStatus).toBe(engine.getStatus);
+    expect(controller.setMuted).toBe(engine.setMuted);
+
     await controller.arm();
-    const context = getLastContext(harness);
 
-    context.currentTime = 1;
-    const hitPlayback = capturePlayback(harness, controller, "hit");
-    const shootPlayback = capturePlayback(harness, controller, "shoot");
+    expect(engine.arm).toHaveBeenCalledTimes(1);
+    expect(controller.getStatus()).toBe("muted");
+    expect(engine.getStatus).toHaveBeenCalledTimes(1);
 
-    expect(hitPlayback.oscillators.length).toBeGreaterThan(0);
-    expect(shootPlayback.oscillators.length).toBeGreaterThan(0);
-  });
+    controller.setMuted(true);
 
-  it("anchors the cooldown to AudioContext.currentTime", async () => {
-    const controller = createSfxController();
-    await controller.arm();
-    const context = getLastContext(harness);
-
-    context.currentTime = 1;
-    controller.play("hit");
-
-    const createOscillatorCallsAfterFirstPlay =
-      context.createOscillator.mock.calls.length;
-
-    controller.play("hit");
-    expect(context.createOscillator).toHaveBeenCalledTimes(
-      createOscillatorCallsAfterFirstPlay
-    );
-
-    context.currentTime += AFTER_SFX_COOLDOWN_SECONDS;
-    controller.play("hit");
-
-    expect(context.createOscillator.mock.calls.length).toBeGreaterThan(
-      createOscillatorCallsAfterFirstPlay
-    );
+    expect(engine.setMuted).toHaveBeenCalledWith(true);
   });
 });
