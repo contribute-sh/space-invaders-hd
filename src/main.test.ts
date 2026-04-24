@@ -22,13 +22,14 @@ type ListenerRecord = {
 
 class FakeStorage implements Storage {
   private readonly entries = new Map<string, string>();
+  readonly setItemCalls: Array<{ key: string; value: string }> = [];
   constructor(seed: Record<string, string>) { for (const [key, value] of Object.entries(seed)) this.entries.set(key, value); }
   get length(): number { return this.entries.size; }
   clear(): void { this.entries.clear(); }
   getItem(key: string): string | null { return this.entries.get(key) ?? null; }
   key(index: number): string | null { return [...this.entries.keys()][index] ?? null; }
   removeItem(key: string): void { this.entries.delete(key); }
-  setItem(key: string, value: string): void { this.entries.set(key, value); }
+  setItem(key: string, value: string): void { this.setItemCalls.push({ key, value }); this.entries.set(key, value); }
 }
 
 class FakeBeforeUnloadTarget {
@@ -243,15 +244,18 @@ describe("bootstrap", () => {
 
     expect(harness.latestRender().flags.audioStatus).toBe("unavailable");
   });
-  it("records a new high score when gameplay reaches game over", () => {
+  it("records a new high score when the runtime reports a score increase", () => {
     const harness = createHarness({
       initialHighScore: 200,
       initialState: createPlayingState({ score: 180 }),
-      step: (state) => ({ ...state, phase: "gameOver", hud: { ...state.hud, score: 320 } })
+      step: (state) => ({ ...state, hud: { ...state.hud, score: 320 } })
     });
     harness.frame();
+    expect(harness.storage.setItemCalls).toEqual([
+      { key: HIGH_SCORE_STORAGE_KEY, value: "320" }
+    ]);
     expect(harness.storage.getItem(HIGH_SCORE_STORAGE_KEY)).toBe("320");
-    expect(harness.latestRender().state.phase).toBe("gameOver");
+    expect(harness.latestRender().state.phase).toBe("playing");
     expect(harness.latestRender().flags.highScore).toBe(320);
   });
   it("auto-pauses on hide and skips simulation work while hidden", () => {
