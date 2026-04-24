@@ -7,6 +7,16 @@ export type HighScoreStore = {
   recordScore: (score: number) => number;
 };
 
+export function pickDisplayHighScore(
+  storedHighScore: number,
+  currentScore: number
+): number {
+  return Math.max(
+    normalizeHighScore(storedHighScore),
+    normalizeHighScore(currentScore)
+  );
+}
+
 export function createHighScoreStore(
   storage: Storage = getDefaultStorage()
 ): HighScoreStore {
@@ -15,7 +25,7 @@ export function createHighScoreStore(
   return {
     getHighScore: () => highScore,
     recordScore: (score) => {
-      const nextHighScore = normalizeHighScore(score);
+      const nextHighScore = pickDisplayHighScore(highScore, score);
 
       if (nextHighScore <= highScore) {
         return highScore;
