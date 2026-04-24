@@ -27,11 +27,16 @@ import {
   getFormationSpeed,
   getPlayerMaxX,
   getPlayerMinX,
-  type GameState
+  type GameState,
+  type Input
 } from "./state";
-import { step } from "./step";
+import { step as stepWithEvents } from "./step";
 
 const SHIELD_HIT_DT_MS = 21;
+
+function step(state: GameState, dtMs: number, input: Input = EMPTY_INPUT) {
+  return stepWithEvents(state, dtMs, input).state;
+}
 
 function createRespawnedPlayingState(lifeLostState?: GameState & { phase: "lifeLost" }) {
   const lifeLost =
@@ -184,10 +189,11 @@ describe("step", () => {
   it("fires a projectile when the cooldown is ready", () => {
     const state = createPlayingState();
 
-    const next = step(state, 16, { ...EMPTY_INPUT, firePressed: true });
+    const next = stepWithEvents(state, 16, { ...EMPTY_INPUT, firePressed: true });
 
-    expect(next.projectiles).toHaveLength(1);
-    expect(next.player.shootCooldownMs).toBe(PLAYER_SHOOT_COOLDOWN_MS);
+    expect(next.events).toEqual([{ type: "playerShot" }]);
+    expect(next.state.projectiles).toHaveLength(1);
+    expect(next.state.player.shootCooldownMs).toBe(PLAYER_SHOOT_COOLDOWN_MS);
   });
 
   it("creates a full set of live shield cells for a fresh playing state", () => {
@@ -204,7 +210,7 @@ describe("step", () => {
   ])("%s", (_, targetRow, velocityY) => {
     const targetCol = 2;
     const base = createPlayingState();
-    const next = step(
+    const next = stepWithEvents(
       {
         ...base,
         projectiles: [createShieldProjectile(base, targetRow, targetCol, 1, velocityY)],
@@ -214,9 +220,17 @@ describe("step", () => {
       EMPTY_INPUT
     );
 
-    expect(next.projectiles).toHaveLength(0);
-    expect(getShieldCell(next, 0, targetRow, targetCol).alive).toBe(false);
-    expect(countAliveShieldCells(next)).toBe(countAliveShieldCells(base) - 1);
+    expect(next.events).toEqual([
+      {
+        type: "shieldHit",
+        shieldIndex: 0,
+        row: targetRow,
+        col: targetCol
+      }
+    ]);
+    expect(next.state.projectiles).toHaveLength(0);
+    expect(getShieldCell(next.state, 0, targetRow, targetCol).alive).toBe(false);
+    expect(countAliveShieldCells(next.state)).toBe(countAliveShieldCells(base) - 1);
   });
 
   it("lets a projectile continue through a dead shield-cell gap", () => {
@@ -359,11 +373,12 @@ describe("step", () => {
       nextProjectileId: 2
     };
 
-    const next = step(state, 0, EMPTY_INPUT);
+    const next = stepWithEvents(state, 0, EMPTY_INPUT);
 
-    expect(next.phase).toBe("lifeLost");
-    expect(next.hud.lives).toBe(base.hud.lives - 1);
-    expect(next.projectiles).toHaveLength(0);
+    expect(next.events).toEqual([{ type: "lifeLost" }]);
+    expect(next.state.phase).toBe("lifeLost");
+    expect(next.state.hud.lives).toBe(base.hud.lives - 1);
+    expect(next.state.projectiles).toHaveLength(0);
   });
 
   it("does not lose another life from an overlapping invader projectile during life lost", () => {
@@ -463,10 +478,17 @@ describe("step", () => {
       nextProjectileId: 3
     };
 
-    const next = step(state, 0, EMPTY_INPUT);
+    const next = stepWithEvents(state, 0, EMPTY_INPUT);
 
-    expect(next.invaders).toHaveLength(1);
-    expect(next.projectiles).toHaveLength(1);
+    expect(next.events).toEqual([
+      {
+        type: "invaderHit",
+        invaderId: invaderA?.id ?? 0,
+        points: invaderA?.points ?? 0
+      }
+    ]);
+    expect(next.state.invaders).toHaveLength(1);
+    expect(next.state.projectiles).toHaveLength(1);
   });
 
   it("enters wave clear when the last invader is destroyed", () => {
@@ -490,10 +512,18 @@ describe("step", () => {
       ]
     };
 
-    const next = step(state, 0, EMPTY_INPUT);
+    const next = stepWithEvents(state, 0, EMPTY_INPUT);
 
-    expect(next.phase).toBe("waveClear");
-    expect(next.projectiles).toHaveLength(0);
+    expect(next.events).toEqual([
+      {
+        type: "invaderHit",
+        invaderId: invader?.id ?? 0,
+        points: invader?.points ?? 0
+      },
+      { type: "waveClear" }
+    ]);
+    expect(next.state.phase).toBe("waveClear");
+    expect(next.state.projectiles).toHaveLength(0);
   });
 
   it("starts the next wave from wave clear and preserves score and lives", () => {
