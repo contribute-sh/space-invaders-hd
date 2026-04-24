@@ -4,10 +4,16 @@ import {
   EMPTY_INPUT,
   FORMATION_SPEED_BASE,
   FORMATION_SPEED_MAX,
+  INVADER_PROJECTILE_WIDTH,
   assignInput,
   cloneInput,
+  createInvaderProjectile,
   createPauseInput,
+  createPlayingState,
   getFormationSpeed,
+  getInvaderProjectileSpawnX,
+  getInvaderProjectileSpawnY,
+  type Invader,
   type Input
 } from "./state";
 
@@ -92,5 +98,40 @@ describe("input helpers", () => {
 
       expect(pauseInput[key]).toBe(EMPTY_INPUT[key]);
     }
+  });
+});
+
+describe("invader projectile spawn helpers", () => {
+  const invader: Invader = {
+    id: 7,
+    row: 2,
+    col: 3,
+    x: 111,
+    y: 222,
+    width: 54,
+    height: 31,
+    points: 20
+  };
+
+  it("centers the projectile horizontally on the invader", () => {
+    expect(getInvaderProjectileSpawnX(invader)).toBe(
+      invader.x + invader.width / 2 - INVADER_PROJECTILE_WIDTH / 2
+    );
+  });
+
+  it("places the projectile flush with the invader bottom edge", () => {
+    expect(getInvaderProjectileSpawnY(invader)).toBe(
+      invader.y + invader.height
+    );
+  });
+
+  it("uses the helper coordinates when creating an invader projectile", () => {
+    const projectile = createInvaderProjectile(
+      createPlayingState({ nextProjectileId: 42 }),
+      invader
+    );
+
+    expect(projectile.x).toBe(getInvaderProjectileSpawnX(invader));
+    expect(projectile.y).toBe(getInvaderProjectileSpawnY(invader));
   });
 });

@@ -394,8 +394,8 @@ export function createInvaderProjectile(
   return {
     id: state.nextProjectileId,
     owner: "invader",
-    x: invader.x + invader.width / 2 - INVADER_PROJECTILE_WIDTH / 2,
-    y: invader.y + invader.height,
+    x: getInvaderProjectileSpawnX(invader),
+    y: getInvaderProjectileSpawnY(invader),
     width: INVADER_PROJECTILE_WIDTH,
     height: INVADER_PROJECTILE_HEIGHT,
     velocityY: INVADER_PROJECTILE_SPEED,
@@ -450,4 +450,12 @@ export function getProjectileSpawnX(player: Player): number {
 
 export function getProjectileSpawnY(player: Player): number {
   return player.y - PROJECTILE_HEIGHT;
+}
+
+export function getInvaderProjectileSpawnX(invader: Invader): number {
+  return invader.x + invader.width / 2 - INVADER_PROJECTILE_WIDTH / 2;
+}
+
+export function getInvaderProjectileSpawnY(invader: Invader): number {
+  return invader.y + invader.height;
 }
