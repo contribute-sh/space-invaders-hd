@@ -10,8 +10,9 @@ import {
 import { step } from "./game/step";
 import { createKeyboardController } from "./input/keyboard";
 import { createFixedStepLoop } from "./loop/fixedStep";
-import { createHighScoreStore, pickDisplayHighScore } from "./persistence";
+import { createHighScoreStore } from "./persistence";
 import { createCanvasRenderer, type CanvasRenderer } from "./render/canvas";
+import { createGameRuntime } from "./runtime";
 import { createVisibilityPauseController } from "./visibility";
 
 const FIXED_TIMESTEP_MS = 1000 / 60;
@@ -57,105 +58,68 @@ export function bootstrap(
   const beforeUnloadTarget =
     options.beforeUnloadTarget ?? getDefaultWindow();
 
-  let state = options.initialState ?? createInitialGameState();
   let bootstrapping = true;
-  let audioAttempted = false;
-  let frameInput: Input = keyboard.snapshot();
+  let frameInput: Input = { ...EMPTY_INPUT };
+
+  const runtime = createGameRuntime({
+    deriveSfxEvents: deriveAudioEvents,
+    initialState: options.initialState ?? createInitialGameState(),
+    muteStore,
+    readHighScore: () => highScoreStore.getHighScore(),
+    readInput: () => {
+      const input = keyboard.snapshot();
+
+      frameInput = input;
+      return input;
+    },
+    sfxController: sfx,
+    step: advanceGameState,
+    writeHighScore: (score) => {
+      highScoreStore.recordScore(score);
+    }
+  });
 
   const createRenderFlags = (): RuntimeRenderFlags => ({
     bootstrapping,
-    muted: muteStore.isMuted(),
-    highScore: pickDisplayHighScore(
-      highScoreStore.getHighScore(),
-      state.hud.score
-    )
+    muted: runtime.isMuted(),
+    highScore: runtime.getDisplayHighScore()
   });
 
-  const maybeArmAudio = (phase: GameState["phase"], input: Input): void => {
-    if (audioAttempted) {
-      return;
-    }
-
-    const leavesOverlay =
-      ((phase === "start" || phase === "waveClear" || phase === "gameOver") &&
-        input.firePressed) ||
-      (phase === "paused" && input.pausePressed);
-
-    if (!leavesOverlay) {
-      return;
-    }
-
-    audioAttempted = true;
-    void sfx.arm();
+  const render = (): void => {
+    renderer.render(runtime.getState(), createRenderFlags());
   };
 
-  const maybeRecordHighScore = (score: number): void => {
-    if (score <= highScoreStore.getHighScore()) {
-      return;
-    }
-
-    highScoreStore.recordScore(score);
-  };
-
-  const playDerivedEvents = (
-    previousState: GameState,
-    nextState: GameState
-  ): void => {
-    for (const event of deriveAudioEvents(previousState, nextState)) {
-      sfx.play(event);
-    }
-  };
-
-  const advanceState = (dtMs: number, input: Input): void => {
-    const previousState = state;
-    state = advanceGameState(state, dtMs, input);
-    maybeRecordHighScore(state.hud.score);
-    playDerivedEvents(previousState, state);
-  };
-
-  sfx.setMuted(muteStore.isMuted());
-  renderer.render(state, createRenderFlags());
+  render();
   bootstrapping = false;
-  maybeArmAudio(state.phase, frameInput);
 
   const visibilityPauseController = createVisibilityController({
     target: visibilityTarget,
     isHidden: resolveHidden,
     onHide: () => {
-      if (state.phase !== "playing") {
+      if (runtime.getState().phase !== "playing") {
         return;
       }
 
-      advanceState(0, {
-        ...EMPTY_INPUT,
-        pausePressed: true
+      frameInput.moveX = 0;
+      frameInput.firePressed = false;
+      frameInput.pausePressed = true;
+      frameInput.fireHeld = false;
+      frameInput.pauseHeld = false;
+      frameInput.mutePressed = false;
+      runtime.onStep({
+        dtMs: 0,
+        firstStepOfFrame: true
       });
     }
   });
 
   const loop = createLoop({
     stepMs: FIXED_TIMESTEP_MS,
-    onStep: ({ dtMs, firstStepOfFrame }) => {
-      const stepInput = firstStepOfFrame
-        ? frameInput
-        : {
-            ...frameInput,
-            firePressed: false,
-            pausePressed: false,
-            mutePressed: false
-          };
-      advanceState(dtMs, stepInput);
-    },
+    onStep: ({ dtMs, firstStepOfFrame }) =>
+      runtime.onStep({ dtMs, firstStepOfFrame }),
     onRender: () => {
-      frameInput = keyboard.snapshot();
-
-      if (frameInput.mutePressed) {
-        muteStore.toggle();
-        sfx.setMuted(muteStore.isMuted());
-      }
-
-      maybeArmAudio(state.phase, frameInput);
-      renderer.render(state, createRenderFlags());
+      runtime.onRender();
+      render();
     },
     isHidden: resolveHidden
   });
