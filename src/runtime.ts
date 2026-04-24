@@ -73,7 +73,7 @@ export function createGameRuntime({
       const stepInput = firstStepOfFrame ? frameInput : clearEdgeInput(frameInput);
 
       state = step(state, dtMs, stepInput);
-      maybeRecordHighScore(previousState, state, readHighScore, writeHighScore);
+      maybeRecordHighScore(previousState, state, writeHighScore);
 
       for (const event of deriveSfxEvents(previousState, state)) {
         sfxController.play(event);
@@ -108,12 +108,11 @@ function hasObservedUserInput(input: Input): boolean {
 function maybeRecordHighScore(
   previousState: GameState,
   nextState: GameState,
-  readHighScore: () => number,
   writeHighScore: (score: number) => void
 ): void {
-  if (previousState.phase === "gameOver" || nextState.phase !== "gameOver") {
+  if (nextState.hud.score <= previousState.hud.score) {
     return;
   }
 
-  writeHighScore(Math.max(readHighScore(), nextState.hud.score));
+  writeHighScore(nextState.hud.score);
 }
