@@ -1,6 +1,7 @@
-import { deriveSfxEvents } from "./audio/events";
+import { mapGameEventsToSfx } from "./audio/events";
 import { createMuteStore } from "./audio/mute";
 import { createSfxController } from "./audio/sfx";
+import { deriveGameEvents, type GameEvent } from "./game/events";
 import {
   EMPTY_INPUT,
   createInitialGameState,
@@ -109,22 +110,32 @@ function maybeArmAudio(phase: GameState["phase"], input: Input): void {
 function advanceState(dtMs: number, input: Input): void {
   const previousState = state;
   state = step(state, dtMs, input);
-  maybeRecordHighScore(state.hud.score);
-  playDerivedEvents(previousState, state);
+  const gameEvents = deriveGameEvents(previousState, state);
+
+  maybeRecordHighScore(gameEvents);
+  playDerivedEvents(gameEvents);
 }
 
-function playDerivedEvents(previousState: GameState, nextState: GameState): void {
-  for (const event of deriveSfxEvents(previousState, nextState)) {
+function playDerivedEvents(gameEvents: readonly GameEvent[]): void {
+  for (const event of mapGameEventsToSfx(gameEvents)) {
     sfx.play(event);
   }
 }
 
-function maybeRecordHighScore(score: number): void {
-  if (score <= highScoreStore.getHighScore()) {
+function maybeRecordHighScore(gameEvents: readonly GameEvent[]): void {
+  const scoreChangedEvent = gameEvents.find(
+    (event): event is Extract<GameEvent, { type: "scoreChanged" }> =>
+      event.type === "scoreChanged"
+  );
+
+  if (
+    scoreChangedEvent === undefined ||
+    scoreChangedEvent.nextScore <= highScoreStore.getHighScore()
+  ) {
     return;
   }
 
-  highScoreStore.recordScore(score);
+  highScoreStore.recordScore(scoreChangedEvent.nextScore);
 }
 
 function createRenderFlags(muted: boolean): RuntimeRenderFlags {

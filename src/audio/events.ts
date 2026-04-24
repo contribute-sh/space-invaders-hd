@@ -1,4 +1,5 @@
 import type { GameState } from "../game/state";
+import { deriveGameEvents, type GameEvent } from "../game/events";
 
 import type { SfxName } from "./sfx";
 
@@ -6,35 +7,46 @@ export function deriveSfxEvents(
   previousState: GameState,
   nextState: GameState
 ): SfxName[] {
-  const events: SfxName[] = [];
-
-  if (countPlayerProjectiles(nextState) > countPlayerProjectiles(previousState)) {
-    events.push("shoot");
-  }
-
-  if (nextState.invaders.length < previousState.invaders.length) {
-    events.push("hit");
-  }
-
-  if (previousState.phase !== "lifeLost" && nextState.phase === "lifeLost") {
-    events.push("playerDeath");
-  }
-
-  if (previousState.phase !== "waveClear" && nextState.phase === "waveClear") {
-    events.push("waveClear");
-  }
-
-  return events;
+  return mapGameEventsToSfx(deriveGameEvents(previousState, nextState));
 }
 
-function countPlayerProjectiles(state: GameState): number {
-  let count = 0;
+export function mapGameEventsToSfx(events: readonly GameEvent[]): SfxName[] {
+  const sfxEvents: SfxName[] = [];
+  let emittedShoot = false;
+  let emittedHit = false;
+  let emittedPlayerDeath = false;
+  let emittedWaveClear = false;
 
-  for (const projectile of state.projectiles) {
-    if (projectile.owner === "player") {
-      count += 1;
+  for (const event of events) {
+    switch (event.type) {
+      case "shotFired":
+        if (!emittedShoot) {
+          sfxEvents.push("shoot");
+          emittedShoot = true;
+        }
+        break;
+      case "invaderHit":
+        if (!emittedHit) {
+          sfxEvents.push("hit");
+          emittedHit = true;
+        }
+        break;
+      case "lifeLost":
+        if (!emittedPlayerDeath) {
+          sfxEvents.push("playerDeath");
+          emittedPlayerDeath = true;
+        }
+        break;
+      case "waveCleared":
+        if (!emittedWaveClear) {
+          sfxEvents.push("waveClear");
+          emittedWaveClear = true;
+        }
+        break;
+      case "scoreChanged":
+        break;
     }
   }
 
-  return count;
+  return sfxEvents;
 }

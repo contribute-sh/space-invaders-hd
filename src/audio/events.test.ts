@@ -74,7 +74,7 @@ describe("deriveSfxEvents", () => {
       createTestProjectile(createPlayingState(), 1, "player")
     ]);
     const nextState = withProjectiles(previousState, [
-      createTestProjectile(previousState, 2, "player"),
+      previousState.projectiles[0]!,
       createTestProjectile(previousState, 3, "invader")
     ]);
 
