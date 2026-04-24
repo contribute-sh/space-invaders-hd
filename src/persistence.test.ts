@@ -56,6 +56,48 @@ describe("pickDisplayHighScore", () => {
   });
 });
 
+describe("pickDisplayHighScore edge cases", () => {
+  it("keeps a positive stored high score when the current score is negative", () => {
+    const result = pickDisplayHighScore(100, -5);
+
+    expect(result).toBe(100);
+    expect(Number.isFinite(result)).toBe(true);
+    expect(result >= 0).toBe(true);
+  });
+
+  it.each([
+    { storedHighScore: 100, currentScore: Number.NaN },
+    { storedHighScore: Number.NaN, currentScore: 75 }
+  ])(
+    "returns a finite, non-negative score when one value is NaN",
+    ({ storedHighScore, currentScore }) => {
+      const result = pickDisplayHighScore(storedHighScore, currentScore);
+
+      expect(Number.isFinite(result)).toBe(true);
+      expect(result >= 0).toBe(true);
+    }
+  );
+
+  it.each([
+    { storedHighScore: Number.POSITIVE_INFINITY, currentScore: 50 },
+    { storedHighScore: Number.NEGATIVE_INFINITY, currentScore: 50 },
+    { storedHighScore: 50, currentScore: Number.POSITIVE_INFINITY },
+    { storedHighScore: 50, currentScore: Number.NEGATIVE_INFINITY }
+  ])(
+    "returns a finite, non-negative score when one value is infinite",
+    ({ storedHighScore, currentScore }) => {
+      const result = pickDisplayHighScore(storedHighScore, currentScore);
+
+      expect(Number.isFinite(result)).toBe(true);
+      expect(result >= 0).toBe(true);
+    }
+  );
+
+  it("returns the shared value when both scores are equal", () => {
+    expect(pickDisplayHighScore(42, 42)).toBe(42);
+  });
+});
+
 describe("createHighScoreStore", () => {
   it("returns 0 when storage is empty", () => {
     const store = createHighScoreStore(new FakeStorage());
