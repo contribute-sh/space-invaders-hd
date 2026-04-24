@@ -157,6 +157,51 @@ function createInput(input: Partial<Input> = {}): Input {
   };
 }
 
+type AudioArmingHarness = {
+  getReadInputCalls: () => number;
+  runtime: GameRuntime;
+  sfxController: FakeSfxController;
+};
+
+const FIRST_AUDIO_ARM_INPUT_CASES = [
+  ["moveX !== 0", createInput({ moveX: -1 })],
+  ["firePressed", createInput({ firePressed: true })],
+  ["pausePressed", createInput({ pausePressed: true })],
+  ["fireHeld", createInput({ fireHeld: true })],
+  ["pauseHeld", createInput({ pauseHeld: true })],
+  ["mutePressed", createInput({ mutePressed: true })]
+] as const satisfies ReadonlyArray<readonly [string, Input]>;
+
+function createAudioArmingHarness(
+  renderInputs: readonly Input[] = []
+): AudioArmingHarness {
+  const sfxController = new FakeSfxController();
+  const muteStore = new FakeMuteStore();
+  const scriptedInputs = [createInput(), ...renderInputs];
+  let readInputCalls = 0;
+
+  const runtime = createGameRuntime({
+    deriveSfxEvents: () => [],
+    initialState: createInitialGameState(),
+    muteStore,
+    readHighScore: () => 0,
+    readInput: () => {
+      const snapshot = scriptedInputs[readInputCalls] ?? createInput();
+      readInputCalls += 1;
+      return snapshot;
+    },
+    sfxController,
+    step: (state) => state,
+    writeHighScore: () => {}
+  });
+
+  return {
+    getReadInputCalls: () => readInputCalls,
+    runtime,
+    sfxController
+  };
+}
+
 function withPlayerProjectileCount(state: GameState, count: number): GameState {
   return {
     ...state,
@@ -217,18 +262,58 @@ function createInvaderTestProjectile(
   };
 }
 
-describe("createGameRuntime", () => {
-  it("arms audio exactly once on the first observed user input", () => {
-    const harness = createHarness();
+describe("createGameRuntime audio arming", () => {
+  it("keeps audio unarmed when renders observe only EMPTY_INPUT", () => {
+    const harness = createAudioArmingHarness([
+      createInput(),
+      createInput(),
+      createInput()
+    ]);
 
-    harness.runtime.onUserInput();
-    harness.runtime.onUserInput();
-    harness.queueInput({ moveX: -1 });
     harness.runtime.onRender();
+    harness.runtime.onRender();
+    harness.runtime.onRender();
+
+    expect(harness.sfxController.armCalls).toBe(0);
+  });
+
+  it.each(FIRST_AUDIO_ARM_INPUT_CASES)(
+    "arms audio on the first render that observes %s",
+    (_label, input) => {
+      const harness = createAudioArmingHarness([input]);
+
+      harness.runtime.onRender();
+
+      expect(harness.sfxController.armCalls).toBe(1);
+    }
+  );
+
+  it("does not re-arm after the first non-empty render input", () => {
+    const harness = createAudioArmingHarness(
+      FIRST_AUDIO_ARM_INPUT_CASES.map(([, input]) => input)
+    );
+
+    for (let index = 0; index < FIRST_AUDIO_ARM_INPUT_CASES.length; index += 1) {
+      harness.runtime.onRender();
+    }
 
     expect(harness.sfxController.armCalls).toBe(1);
   });
 
+  it("arms audio exactly once on onUserInput before any render", () => {
+    const harness = createAudioArmingHarness();
+
+    expect(harness.getReadInputCalls()).toBe(1);
+
+    harness.runtime.onUserInput();
+    harness.runtime.onUserInput();
+
+    expect(harness.sfxController.armCalls).toBe(1);
+    expect(harness.getReadInputCalls()).toBe(1);
+  });
+});
+
+describe("createGameRuntime", () => {
   it("toggles mute on a mute edge and propagates the result to the sfx controller", () => {
     const harness = createHarness();
 
