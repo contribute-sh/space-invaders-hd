@@ -22,6 +22,9 @@ function getInputKeys(): Array<keyof Input> {
 }
 
 describe("getFormationSpeed", () => {
+  // Mirrors the private FORMATION_SPEED_KILL_MULTIPLIER implementation constant.
+  const expectedKillMultiplier = 2.7;
+
   it("returns the wave start speed when invaderCount exceeds totalInvaders", () => {
     const waveStartSpeed = FORMATION_SPEED_BASE * 2;
 
@@ -54,6 +57,61 @@ describe("getFormationSpeed", () => {
     expect(getFormationSpeed(5, waveStartSpeed, 10)).toBe(
       waveStartSpeed + (FORMATION_SPEED_MAX - waveStartSpeed) / 2
     );
+  });
+
+  it("returns the wave start speed exactly when all invaders are alive below the cap", () => {
+    const waveStartSpeed = 100;
+
+    expect(getFormationSpeed(10, waveStartSpeed, 10)).toBe(waveStartSpeed);
+  });
+
+  it("uses the uncapped kill multiplier when no invaders remain and the scaled speed stays below the cap", () => {
+    const waveStartSpeed = 100;
+
+    expect(getFormationSpeed(0, waveStartSpeed, 10)).toBeCloseTo(
+      waveStartSpeed * expectedKillMultiplier
+    );
+  });
+
+  it("clamps the fully cleared formation speed to FORMATION_SPEED_MAX", () => {
+    const waveStartSpeed = FORMATION_SPEED_MAX;
+
+    expect(getFormationSpeed(0, waveStartSpeed, 10)).toBe(
+      FORMATION_SPEED_MAX
+    );
+  });
+
+  it("interpolates halfway between the wave start speed and the uncapped kill-multiplied speed", () => {
+    const totalInvaders = 10;
+    const invaderCount = 5;
+    const waveStartSpeed = 100;
+    const expectedMaxSpeed = waveStartSpeed * expectedKillMultiplier;
+
+    expect(
+      getFormationSpeed(invaderCount, waveStartSpeed, totalInvaders)
+    ).toBeCloseTo(waveStartSpeed + (expectedMaxSpeed - waveStartSpeed) / 2);
+  });
+
+  it("never decreases as invaderCount drops toward zero", () => {
+    const waveStartSpeed = 100;
+    const totalInvaders = 10;
+    const sampledInvaderCounts = [10, 8, 5, 2, 0] as const;
+    let previousSpeed = getFormationSpeed(
+      sampledInvaderCounts[0],
+      waveStartSpeed,
+      totalInvaders
+    );
+
+    for (const invaderCount of sampledInvaderCounts.slice(1)) {
+      const currentSpeed = getFormationSpeed(
+        invaderCount,
+        waveStartSpeed,
+        totalInvaders
+      );
+
+      expect(currentSpeed).toBeGreaterThanOrEqual(previousSpeed);
+      previousSpeed = currentSpeed;
+    }
   });
 });
 
