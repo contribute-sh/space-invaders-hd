@@ -1,3 +1,5 @@
+import { createAudioEngine, type AudioEngine } from "./engine";
+
 export type SfxName = "shoot" | "hit" | "playerDeath" | "waveClear";
 
 export type SfxController = {
@@ -16,81 +18,61 @@ type Tone = {
 
 const SFX_COOLDOWN_SECONDS = 0.03;
 
-export function createSfxController(): SfxController {
-  let context: AudioContext | null = null;
-  let status: "idle" | "ready" | "muted" = "idle";
-  let muted = false;
+type SfxEngine = Pick<
+  AudioEngine,
+  "arm" | "getStatus" | "scheduleTone" | "setMuted"
+> &
+  Partial<Pick<AudioEngine, "now">>;
+
+export function createSfxController(
+  engine: SfxEngine = createAudioEngine()
+): SfxController {
   const lastPlayedAtByName = new Map<SfxName, number>();
 
-  return {
-    arm: async () => {
-      if (status === "muted") {
-        return;
-      }
+  const play = (name: SfxName): void => {
+    if (engine.getStatus() !== "ready") {
+      return;
+    }
 
-      try {
-        if (context === null) {
-          context = new AudioContext();
-          lastPlayedAtByName.clear();
-        }
-        if (context.state === "suspended") {
-          await context.resume();
-        }
-        status = "ready";
-      } catch {
-        status = "muted";
-      }
-    },
-    getStatus: () => (muted ? "muted" : status),
-    play: (name) => {
-      if (muted || status !== "ready" || context === null) {
-        return;
-      }
+    const currentTime = engine.now?.();
+    const lastPlayedAt = currentTime === undefined
+      ? undefined
+      : lastPlayedAtByName.get(name);
 
-      const now = context.currentTime;
-      const lastPlayedAt = lastPlayedAtByName.get(name);
+    if (
+      currentTime !== undefined &&
+      lastPlayedAt !== undefined &&
+      currentTime - lastPlayedAt < SFX_COOLDOWN_SECONDS
+    ) {
+      return;
+    }
 
-      if (
-        lastPlayedAt !== undefined &&
-        now - lastPlayedAt < SFX_COOLDOWN_SECONDS
-      ) {
-        return;
-      }
+    if (currentTime !== undefined) {
+      lastPlayedAtByName.set(name, currentTime);
+    }
 
-      lastPlayedAtByName.set(name, now);
-      const tones = getTonePattern(name);
-      let offset = 0;
+    let startOffset = 0;
 
-      for (const tone of tones) {
-        playTone(context, now + offset, tone);
-        offset += tone.duration * 0.68;
-      }
-    },
-    setMuted: (value) => {
-      muted = value;
+    for (const [index, tone] of getTonePattern(name).entries()) {
+      engine.scheduleTone({
+        frequency: tone.frequency,
+        duration: tone.duration,
+        gain: tone.gain,
+        type: tone.type,
+        startOffset,
+        cooldownSeconds: index === 0 ? SFX_COOLDOWN_SECONDS : undefined,
+        tag: index === 0 ? name : undefined
+      });
+      startOffset += tone.duration * 0.68;
     }
   };
-}
 
-function playTone(
-  context: AudioContext,
-  startTime: number,
-  tone: Tone
-): void {
-  const oscillator = context.createOscillator();
-  const gain = context.createGain();
-  const endTime = startTime + tone.duration;
-
-  oscillator.type = tone.type;
-  oscillator.frequency.setValueAtTime(tone.frequency, startTime);
-  gain.gain.setValueAtTime(0.0001, startTime);
-  gain.gain.exponentialRampToValueAtTime(tone.gain, startTime + 0.02);
-  gain.gain.exponentialRampToValueAtTime(0.0001, endTime);
-
-  oscillator.connect(gain);
-  gain.connect(context.destination);
-  oscillator.start(startTime);
-  oscillator.stop(endTime + 0.02);
+  return {
+    arm: engine.arm,
+    getStatus: engine.getStatus,
+    play,
+    setMuted: engine.setMuted
+  };
 }
 
 function getTonePattern(name: SfxName): Tone[] {

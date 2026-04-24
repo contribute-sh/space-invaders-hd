@@ -8,6 +8,7 @@ import {
   type Mock
 } from "vitest";
 
+import type { AudioEngineStatus, ScheduleToneOptions } from "./engine";
 import { createSfxController, type SfxName } from "./sfx";
 
 type MockDestination = {
@@ -68,6 +69,13 @@ type MockWebAudioHarness = {
   readonly gainConstructor: Mock<() => MockGainNode>;
 };
 
+type MockSfxEngine = {
+  arm: Mock<() => Promise<void>>;
+  getStatus: Mock<() => AudioEngineStatus>;
+  scheduleTone: Mock<(options: ScheduleToneOptions) => void>;
+  setMuted: Mock<(muted: boolean) => void>;
+};
+
 type MockOscillatorConstructor = new () => MockOscillatorNode;
 type MockGainConstructor = new () => MockGainNode;
 
@@ -105,6 +113,17 @@ function createMockAudioParam(initialValue: number): MockAudioParam {
   });
 
   return audioParam;
+}
+
+function createMockEngine(
+  initialStatus: AudioEngineStatus = "ready"
+): MockSfxEngine {
+  return {
+    arm: vi.fn(async () => {}),
+    getStatus: vi.fn(() => initialStatus),
+    scheduleTone: vi.fn<(options: ScheduleToneOptions) => void>(),
+    setMuted: vi.fn<(muted: boolean) => void>()
+  };
 }
 
 function installMockWebAudio(
@@ -236,6 +255,21 @@ function getAudioParamCall(
   const [value, time] = call;
 
   return { value, time };
+}
+
+function getScheduledToneCall(
+  engine: MockSfxEngine,
+  index: number
+): ScheduleToneOptions {
+  const call = engine.scheduleTone.mock.calls[index];
+
+  if (call === undefined) {
+    throw new Error(`Expected scheduleTone call #${index + 1}.`);
+  }
+
+  const [options] = call;
+
+  return options;
 }
 
 function capturePlayback(
@@ -533,5 +567,72 @@ describe("createSfxController", () => {
     expect(context.createOscillator.mock.calls.length).toBeGreaterThan(
       createOscillatorCallsAfterFirstPlay
     );
+  });
+});
+
+describe("createSfxController with an injected engine", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("forwards arm, getStatus, and setMuted to the engine", async () => {
+    const engine = createMockEngine("idle");
+    const controller = createSfxController(engine);
+
+    await controller.arm();
+    controller.setMuted(true);
+    engine.getStatus.mockReturnValue("muted");
+
+    expect(engine.arm).toHaveBeenCalledTimes(1);
+    expect(engine.setMuted).toHaveBeenCalledWith(true);
+    expect(controller.getStatus()).toBe("muted");
+  });
+
+  it("passes the shoot tones to scheduleTone with the expected cooldown tag", () => {
+    const engine = createMockEngine();
+    const controller = createSfxController(engine);
+
+    controller.play("shoot");
+
+    expect(engine.scheduleTone).toHaveBeenCalledTimes(2);
+
+    const firstTone = getScheduledToneCall(engine, 0);
+    const secondTone = getScheduledToneCall(engine, 1);
+
+    expect(firstTone).toEqual({
+      frequency: 720,
+      duration: 0.09,
+      gain: 0.06,
+      type: "square",
+      startOffset: 0,
+      cooldownSeconds: 0.03,
+      tag: "shoot"
+    });
+    expect(secondTone.frequency).toBe(940);
+    expect(secondTone.duration).toBe(0.06);
+    expect(secondTone.gain).toBe(0.04);
+    expect(secondTone.type).toBe("triangle");
+    expect(secondTone.startOffset).toBeCloseTo(0.0612);
+  });
+
+  it.each(["idle", "muted"] as const)(
+    "does not call scheduleTone while %s",
+    (status) => {
+      const engine = createMockEngine(status);
+      const controller = createSfxController(engine);
+
+      controller.play("shoot");
+
+      expect(engine.scheduleTone).not.toHaveBeenCalled();
+    }
+  );
+
+  it("forwards the per-name cooldown tag", () => {
+    const engine = createMockEngine();
+    const controller = createSfxController(engine);
+
+    controller.play("waveClear");
+
+    expect(getScheduledToneCall(engine, 0).tag).toBe("waveClear");
   });
 });
