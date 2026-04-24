@@ -323,6 +323,87 @@ describe("step", () => {
     expect(step(almost, 1, EMPTY_INPUT).projectiles.some((projectile) => projectile.owner === "invader")).toBe(true);
   });
 
+  it("does not let an invader killed on the firing frame spawn a projectile", () => {
+    const base = createPlayingState();
+    const invader = base.invaders[0];
+    expect(invader).toBeDefined();
+    if (invader === undefined) {
+      throw new Error("Expected an invader");
+    }
+
+    const armedDtMs = 1;
+    const targetedInvader = {
+      ...invader,
+      x: base.player.x + (base.player.width - invader.width) / 2,
+      y: base.player.y - invader.height + 1
+    };
+    const state = {
+      ...base,
+      invaders: [targetedInvader],
+      projectiles: [
+        {
+          id: 1,
+          owner: "player" as const,
+          x: targetedInvader.x,
+          y: targetedInvader.y,
+          width: targetedInvader.width,
+          height: targetedInvader.height,
+          velocityY: 0,
+          active: true
+        }
+      ],
+      nextProjectileId: 2,
+      invaderFireCooldownMs: armedDtMs
+    };
+
+    const next = step(state, armedDtMs, EMPTY_INPUT);
+
+    expect(next.phase).toBe("waveClear");
+    expect(next.hud.lives).toBe(base.hud.lives);
+    expect(next.projectiles.some((projectile) => projectile.owner === "invader")).toBe(false);
+  });
+
+  it("spawns an invader projectile from the firing invader's post-march position", () => {
+    const base = createPlayingState();
+    const invader = base.invaders[0];
+    expect(invader).toBeDefined();
+    if (invader === undefined) {
+      throw new Error("Expected an invader");
+    }
+
+    const armedDtMs = INVADER_FIRE_INTERVAL_MS / 9;
+    const marchingInvader = {
+      ...invader,
+      x: base.formation.rightBound - invader.width - 4
+    };
+    const state = {
+      ...base,
+      invaders: [marchingInvader],
+      invaderFireCooldownMs: armedDtMs
+    };
+
+    const next = step(state, armedDtMs, EMPTY_INPUT);
+    const firingInvader = next.invaders[0];
+    const projectile = next.projectiles.find(
+      (candidate) => candidate.owner === "invader"
+    );
+
+    expect(firingInvader).toBeDefined();
+    expect(projectile).toBeDefined();
+    expect(projectile?.x).toBe(
+      (firingInvader?.x ?? 0) +
+        (firingInvader?.width ?? 0) / 2 -
+        INVADER_PROJECTILE_WIDTH / 2
+    );
+    expect(projectile?.y).toBe(
+      (firingInvader?.y ?? 0) + (firingInvader?.height ?? 0)
+    );
+    expect(projectile?.x).not.toBe(
+      marchingInvader.x + marchingInvader.width / 2 - INVADER_PROJECTILE_WIDTH / 2
+    );
+    expect(projectile?.y).not.toBe(marchingInvader.y + marchingInvader.height);
+  });
+
   it.each(["start", "waveClear", "gameOver", "paused"] as const)(
     "does not spawn invader projectiles while %s",
     (phase) => {
