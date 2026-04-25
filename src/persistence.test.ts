@@ -225,6 +225,20 @@ describe("createHighScoreStore", () => {
     expect(storage.setItemCalls).toHaveLength(0);
   });
 
+  it("does not write when the score is less than or equal to the stored high score", () => {
+    const storage = new FakeStorage();
+    storage.seed(HIGH_SCORE_STORAGE_KEY, "500");
+    const store = createHighScoreStore(storage);
+
+    expect(store.recordScore(300)).toBe(500);
+    expect(storage.setItemCalls).toHaveLength(0);
+    expect(store.getHighScore()).toBe(500);
+
+    expect(store.recordScore(500)).toBe(500);
+    expect(storage.setItemCalls).toHaveLength(0);
+    expect(store.getHighScore()).toBe(500);
+  });
+
   it("does not write when the score does not exceed the stored high score", () => {
     const storage = new FakeStorage();
     storage.seed(HIGH_SCORE_STORAGE_KEY, "500");
