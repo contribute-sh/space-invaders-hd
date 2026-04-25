@@ -167,6 +167,22 @@ describe("createKeyboardController", () => {
     expect(snapshot.fireHeld).toBe(false);
   });
 
+  it("clears unconsumed fire and pause edges on blur before snapshot", () => {
+    const target = createTarget();
+    const controller = createKeyboardController(target);
+
+    dispatchKeyDown(target, "Space");
+    dispatchKeyDown(target, "KeyP");
+    dispatchBlur(target);
+
+    const snapshot = controller.snapshot();
+
+    expect(snapshot.firePressed).toBe(false);
+    expect(snapshot.pausePressed).toBe(false);
+    expect(snapshot.fireHeld).toBe(false);
+    expect(snapshot.pauseHeld).toBe(false);
+  });
+
   it("clears an unconsumed pause edge on blur before snapshot", () => {
     const target = createTarget();
     const controller = createKeyboardController(target);
