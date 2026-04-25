@@ -96,6 +96,26 @@ describe("createKeyboardController", () => {
     expect(controller.snapshot().moveX).toBe(-1);
   });
 
+  it("preserves pending fire, pause, and mute edges across movement keyup events", () => {
+    const target = createTarget();
+    const controller = createKeyboardController(target);
+
+    dispatchKeyDown(target, "Space");
+    dispatchKeyDown(target, "KeyP");
+    dispatchKeyDown(target, "KeyM");
+    dispatchKeyUp(target, "ArrowLeft");
+    dispatchKeyUp(target, "ArrowRight");
+
+    const snapshot = controller.snapshot();
+
+    expect(snapshot.moveX).toBe(0);
+    expect(snapshot.firePressed).toBe(true);
+    expect(snapshot.pausePressed).toBe(true);
+    expect(snapshot.mutePressed).toBe(true);
+
+    controller.dispose();
+  });
+
   it("clears held ArrowRight, Space, and KeyP input and resets mute gating on blur", () => {
     const target = createTarget();
     const controller = createKeyboardController(target);
