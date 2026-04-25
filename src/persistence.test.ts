@@ -295,14 +295,18 @@ describe("createHighScoreStore", () => {
     expect(storage.getItem(HIGH_SCORE_STORAGE_KEY)).toBe("260");
   });
 
-  it.each(["not-a-number", "-5", "NaN"])(
-    "recovers from malformed stored value %s",
+  it.each(["abc", "-50", "NaN", "Infinity"])(
+    "normalizes corrupt stored value %s to 0 and overwrites it on a new record",
     (storedValue) => {
       const storage = new FakeStorage();
       storage.seed(HIGH_SCORE_STORAGE_KEY, storedValue);
       const store = createHighScoreStore(storage);
 
       expect(store.getHighScore()).toBe(0);
+      expect(store.recordScore(10)).toBe(10);
+      expect(storage.setItemCalls).toEqual([
+        { key: HIGH_SCORE_STORAGE_KEY, value: "10" }
+      ]);
     }
   );
 
