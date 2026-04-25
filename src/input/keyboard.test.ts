@@ -218,6 +218,23 @@ describe("createKeyboardController", () => {
     });
   }
 
+  it("re-emits the mute edge after KeyM is released and pressed again", () => {
+    const target = createTarget();
+    const controller = createKeyboardController(target);
+
+    try {
+      dispatchKeyDown(target, "KeyM");
+      controller.snapshot();
+
+      dispatchKeyUp(target, "KeyM");
+      dispatchKeyDown(target, "KeyM");
+
+      expect(controller.snapshot().mutePressed).toBe(true);
+    } finally {
+      controller.dispose();
+    }
+  });
+
   it("consumes returned fire, pause, and mute edges on the next snapshot", () => {
     const heldEdgeCases = [
       {
