@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   INVADER_PROJECTILE_HEIGHT,
   INVADER_PROJECTILE_WIDTH,
+  INVADER_ROWS,
   PROJECTILE_HEIGHT,
   PROJECTILE_WIDTH
 } from "../../game/state";
@@ -10,6 +11,7 @@ import { getSprite } from "../sprites";
 import type { SpriteDescriptor } from "../sprites";
 import {
   INVADER_PROJECTILE_DESCRIPTOR,
+  INVADER_ROW_DESCRIPTORS,
   PLAYER_PROJECTILE_DESCRIPTOR,
   SHIELD_CELL_DESCRIPTOR,
   SPRITE_DESCRIPTOR_REGISTRY
@@ -74,6 +76,16 @@ describe("SPRITE_DESCRIPTOR_REGISTRY", () => {
     expect(
       [...playerColors].some((color) => invaderColors.has(color))
     ).toBe(false);
+  });
+});
+
+describe("INVADER_ROW_DESCRIPTORS", () => {
+  it("matches the simulation row count and uses stable row ids", () => {
+    expect(INVADER_ROW_DESCRIPTORS).toHaveLength(INVADER_ROWS);
+
+    for (const [index, descriptor] of INVADER_ROW_DESCRIPTORS.entries()) {
+      expect(descriptor.id).toBe(`invader-row-${index}`);
+    }
   });
 });
 
