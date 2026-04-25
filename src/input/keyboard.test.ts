@@ -58,6 +58,12 @@ describe("createKeyboardController", () => {
       edgeField: "pausePressed",
       heldField: "pauseHeld",
       label: "pause"
+    },
+    {
+      code: "KeyM",
+      edgeField: "mutePressed",
+      heldField: undefined,
+      label: "mute"
     }
   ] as const;
 
@@ -201,11 +207,14 @@ describe("createKeyboardController", () => {
       const rearmedSnapshot = controller.snapshot();
 
       expect(firstSnapshot[edgeField]).toBe(true);
-      expect(firstSnapshot[heldField]).toBe(true);
       expect(secondSnapshot[edgeField]).toBe(false);
-      expect(secondSnapshot[heldField]).toBe(true);
       expect(rearmedSnapshot[edgeField]).toBe(true);
-      expect(rearmedSnapshot[heldField]).toBe(true);
+
+      if (heldField !== undefined) {
+        expect(firstSnapshot[heldField]).toBe(true);
+        expect(secondSnapshot[heldField]).toBe(true);
+        expect(rearmedSnapshot[heldField]).toBe(true);
+      }
     });
   }
 
@@ -248,28 +257,6 @@ describe("createKeyboardController", () => {
 
     expect(firstMuteSnapshot.mutePressed).toBe(true);
     expect(secondMuteSnapshot.mutePressed).toBe(false);
-  });
-
-  it("does not re-emit the mute edge on auto-repeat keydown and re-arms after keyup", () => {
-    const target = createTarget();
-    const controller = createKeyboardController(target);
-
-    dispatchKeyDown(target, "KeyM");
-
-    const firstSnapshot = controller.snapshot();
-
-    dispatchKeyDown(target, "KeyM");
-
-    const secondSnapshot = controller.snapshot();
-
-    dispatchKeyUp(target, "KeyM");
-    dispatchKeyDown(target, "KeyM");
-
-    const rearmedSnapshot = controller.snapshot();
-
-    expect(firstSnapshot.mutePressed).toBe(true);
-    expect(secondSnapshot.mutePressed).toBe(false);
-    expect(rearmedSnapshot.mutePressed).toBe(true);
   });
 
   describe("preventDefault behavior", () => {
