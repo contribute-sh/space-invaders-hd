@@ -295,6 +295,43 @@ describe("createAudioEngine", () => {
     expect(harness.gains).toHaveLength(0);
   });
 
+  it("lets muted status override ready until scheduling is explicitly re-enabled", async () => {
+    const engine = createAudioEngine({ createContext: harness.createContext });
+    const toneOptions: ScheduleToneOptions = {
+      frequency: 660,
+      duration: 0.08,
+      gain: 0.04,
+      type: "triangle"
+    };
+
+    await engine.arm();
+
+    const context = getLastContext(harness);
+
+    expect(engine.getStatus()).toBe("ready");
+
+    context.createOscillator.mockClear();
+    context.createGain.mockClear();
+
+    engine.setMuted(true);
+
+    expect(engine.getStatus()).toBe("muted");
+
+    engine.scheduleTone(toneOptions);
+
+    expect(context.createOscillator).not.toHaveBeenCalled();
+    expect(context.createGain).not.toHaveBeenCalled();
+
+    engine.setMuted(false);
+
+    expect(engine.getStatus()).toBe("ready");
+
+    engine.scheduleTone(toneOptions);
+
+    expect(context.createOscillator).toHaveBeenCalledTimes(1);
+    expect(context.createGain).toHaveBeenCalledTimes(1);
+  });
+
   it("restores scheduling after unmuting from a muted ready state", async () => {
     const engine = createAudioEngine({ createContext: harness.createContext });
     const toneOptions: ScheduleToneOptions = {
