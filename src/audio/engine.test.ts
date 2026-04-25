@@ -13,7 +13,8 @@ import {
   type AudioContextLike,
   type AudioDestinationLike,
   type AudioGainNodeLike,
-  type AudioOscillatorNodeLike
+  type AudioOscillatorNodeLike,
+  type ScheduleToneOptions
 } from "./engine";
 
 type MockDestination = {
@@ -292,6 +293,47 @@ describe("createAudioEngine", () => {
     expect(mutedEngine.getStatus()).toBe("muted");
     expect(harness.oscillators).toHaveLength(0);
     expect(harness.gains).toHaveLength(0);
+  });
+
+  it("restores scheduling after unmuting from a muted ready state", async () => {
+    const engine = createAudioEngine({ createContext: harness.createContext });
+    const toneOptions: ScheduleToneOptions = {
+      frequency: 660,
+      duration: 0.08,
+      gain: 0.04,
+      type: "triangle"
+    };
+
+    await engine.arm();
+
+    const context = getLastContext(harness);
+
+    expect(engine.getStatus()).toBe("ready");
+
+    engine.setMuted(true);
+    engine.scheduleTone(toneOptions);
+
+    expect(context.createOscillator).not.toHaveBeenCalled();
+    expect(context.createGain).not.toHaveBeenCalled();
+
+    context.createOscillator.mockClear();
+    context.createGain.mockClear();
+
+    engine.setMuted(false);
+    engine.scheduleTone(toneOptions);
+
+    expect(engine.getStatus()).toBe("ready");
+    expect(context.createOscillator).toHaveBeenCalledTimes(1);
+    expect(context.createGain).toHaveBeenCalledTimes(1);
+
+    const oscillator = harness.oscillators[0];
+
+    if (oscillator === undefined) {
+      throw new Error("Expected an oscillator after unmuting.");
+    }
+
+    expect(oscillator.start).toHaveBeenCalledTimes(1);
+    expect(oscillator.stop).toHaveBeenCalledTimes(1);
   });
 
   it("schedules oscillator playback through a gain envelope", async () => {
