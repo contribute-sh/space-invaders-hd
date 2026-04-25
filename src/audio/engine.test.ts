@@ -470,6 +470,33 @@ describe("createAudioEngine", () => {
     expect(context.createGain).toHaveBeenCalledTimes(2);
   });
 
+  it("does not gate consecutive tones when tag is provided without cooldownSeconds", async () => {
+    const engine = createAudioEngine({ createContext: harness.createContext });
+    await engine.arm();
+
+    const context = getLastContext(harness);
+    const toneOptions: ScheduleToneOptions = {
+      tag: "shoot",
+      frequency: 720,
+      duration: 0.09,
+      gain: 0.06,
+      type: "square"
+    };
+
+    engine.scheduleTone(toneOptions);
+    engine.scheduleTone(toneOptions);
+
+    expect(context.createOscillator).toHaveBeenCalledTimes(2);
+    expect(context.createGain).toHaveBeenCalledTimes(2);
+    expect(harness.oscillators).toHaveLength(2);
+    expect(harness.gains).toHaveLength(2);
+
+    for (const oscillator of harness.oscillators) {
+      expect(oscillator.start).toHaveBeenCalledTimes(1);
+      expect(oscillator.stop).toHaveBeenCalledTimes(1);
+    }
+  });
+
   it("applies cooldown suppression independently for each scheduleTone tag", async () => {
     const engine = createAudioEngine({ createContext: harness.createContext });
     await engine.arm();
