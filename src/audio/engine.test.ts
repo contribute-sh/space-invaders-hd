@@ -295,6 +295,20 @@ describe("createAudioEngine", () => {
     expect(idleEngine.getStatus()).toBe("idle");
   });
 
+  it("returns 0 before arm and the context currentTime after arm", async () => {
+    const engine = createAudioEngine({ createContext: harness.createContext });
+
+    expect(engine.now()).toBe(0);
+
+    await engine.arm();
+
+    const context = getLastContext(harness);
+
+    context.currentTime = 12.5;
+
+    expect(engine.now()).toBe(12.5);
+  });
+
   describe("AudioEngine.setMuted", () => {
     const toneOptions: ScheduleToneOptions = {
       frequency: 660,
