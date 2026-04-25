@@ -98,6 +98,105 @@ describe("pickDisplayHighScore edge cases", () => {
   });
 });
 
+describe("pickDisplayHighScore", () => {
+  it("returns the stored high score when it exceeds the current score", () => {
+    expect(pickDisplayHighScore(480, 360)).toBe(480);
+  });
+
+  it("returns the current score when it exceeds the stored high score", () => {
+    expect(pickDisplayHighScore(220, 360)).toBe(360);
+  });
+
+  it("returns the shared score when both values are equal", () => {
+    expect(pickDisplayHighScore(42, 42)).toBe(42);
+  });
+
+  it("normalizes NaN stored scores to 0", () => {
+    expect(pickDisplayHighScore(Number.NaN, 75)).toBe(75);
+  });
+
+  it("normalizes NaN current scores to 0", () => {
+    expect(pickDisplayHighScore(75, Number.NaN)).toBe(75);
+  });
+
+  it.each([
+    {
+      storedHighScore: Number.POSITIVE_INFINITY,
+      currentScore: 75,
+      expectedHighScore: 75
+    },
+    {
+      storedHighScore: 75,
+      currentScore: Number.POSITIVE_INFINITY,
+      expectedHighScore: 75
+    }
+  ])(
+    "normalizes Infinity to 0",
+    ({ storedHighScore, currentScore, expectedHighScore }) => {
+      expect(pickDisplayHighScore(storedHighScore, currentScore)).toBe(
+        expectedHighScore
+      );
+    }
+  );
+
+  it.each([
+    {
+      storedHighScore: Number.NEGATIVE_INFINITY,
+      currentScore: 75,
+      expectedHighScore: 75
+    },
+    {
+      storedHighScore: 75,
+      currentScore: Number.NEGATIVE_INFINITY,
+      expectedHighScore: 75
+    }
+  ])(
+    "normalizes -Infinity to 0",
+    ({ storedHighScore, currentScore, expectedHighScore }) => {
+      expect(pickDisplayHighScore(storedHighScore, currentScore)).toBe(
+        expectedHighScore
+      );
+    }
+  );
+
+  it.each([
+    {
+      storedHighScore: -5,
+      currentScore: 0,
+      expectedHighScore: 0
+    },
+    {
+      storedHighScore: 0,
+      currentScore: -5,
+      expectedHighScore: 0
+    }
+  ])(
+    "normalizes negative scores to 0",
+    ({ storedHighScore, currentScore, expectedHighScore }) => {
+      expect(pickDisplayHighScore(storedHighScore, currentScore)).toBe(
+        expectedHighScore
+      );
+    }
+  );
+
+  it.each([
+    {
+      storedHighScore: Number.NaN,
+      currentScore: -5
+    },
+    {
+      storedHighScore: Number.POSITIVE_INFINITY,
+      currentScore: Number.NaN
+    },
+    {
+      storedHighScore: Number.NEGATIVE_INFINITY,
+      currentScore: -5
+    }
+  ])("returns 0 when both inputs are hostile", ({ storedHighScore, currentScore }) => {
+    expect(pickDisplayHighScore(storedHighScore, currentScore)).toBe(0);
+  });
+});
+
 describe("createHighScoreStore", () => {
   it("returns 0 when storage is empty", () => {
     const store = createHighScoreStore(new FakeStorage());
