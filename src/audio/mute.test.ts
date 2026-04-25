@@ -7,6 +7,9 @@ const MUTE_STORAGE_KEY = "audio:muted";
 class FakeStorage implements Storage {
   private readonly entries = new Map<string, string>();
 
+  public throwOnGet = false;
+  public throwOnSet = false;
+
   get length(): number {
     return this.entries.size;
   }
@@ -16,6 +19,10 @@ class FakeStorage implements Storage {
   }
 
   getItem(key: string): string | null {
+    if (this.throwOnGet) {
+      throw new Error("getItem failed");
+    }
+
     return this.entries.get(key) ?? null;
   }
 
@@ -28,6 +35,10 @@ class FakeStorage implements Storage {
   }
 
   setItem(key: string, value: string): void {
+    if (this.throwOnSet) {
+      throw new Error("setItem failed");
+    }
+
     this.entries.set(key, value);
   }
 
@@ -77,6 +88,41 @@ describe("createMuteStore", () => {
       expect(store.isMuted()).toBe(false);
     }
   );
+
+  it("falls back to in-memory state when getItem and setItem throw", () => {
+    const storage = new FakeStorage();
+    storage.throwOnGet = true;
+    storage.throwOnSet = true;
+    let store!: ReturnType<typeof createMuteStore>;
+    let nextMuted = false;
+
+    expect(() => {
+      store = createMuteStore(storage);
+    }).not.toThrow();
+
+    expect(store.isMuted()).toBe(false);
+    expect(() => {
+      nextMuted = store.toggle();
+    }).not.toThrow();
+    expect(nextMuted).toBe(true);
+    expect(store.isMuted()).toBe(true);
+    expect(store.toggle()).toBe(false);
+  });
+
+  it("keeps the seeded muted value in memory when only setItem throws", () => {
+    const storage = new FakeStorage();
+    storage.seed(MUTE_STORAGE_KEY, "true");
+    storage.throwOnSet = true;
+    const store = createMuteStore(storage);
+    let nextMuted = true;
+
+    expect(store.isMuted()).toBe(true);
+    expect(() => {
+      nextMuted = store.toggle();
+    }).not.toThrow();
+    expect(nextMuted).toBe(false);
+    expect(store.isMuted()).toBe(false);
+  });
 
   it("notifies subscribers on toggle and stops after unsubscribe", () => {
     const storage = new FakeStorage();
