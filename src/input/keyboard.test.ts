@@ -208,6 +208,19 @@ describe("createKeyboardController", () => {
     expect(snapshot.fireHeld).toBe(true);
   });
 
+  it("does not re-arm firePressed when Space keydown repeats while held", () => {
+    const target = createTarget();
+    const controller = createKeyboardController(target);
+
+    dispatchKeyDown(target, "Space");
+
+    expect(controller.snapshot().firePressed).toBe(true);
+
+    dispatchKeyDown(target, "Space");
+
+    expect(controller.snapshot().firePressed).toBe(false);
+  });
+
   for (const { code, edgeField, heldField, label } of repeatGuardCases) {
     it(`does not re-emit the ${label} edge on auto-repeat keydown and re-arms after keyup`, () => {
       const target = createTarget();
