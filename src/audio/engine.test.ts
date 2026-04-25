@@ -430,6 +430,45 @@ describe("createAudioEngine", () => {
     expect(context.createGain).toHaveBeenCalledTimes(2);
   });
 
+  it("drops tagged tones within the cooldown window and re-allows them after", async () => {
+    const engine = createAudioEngine({ createContext: harness.createContext });
+    await engine.arm();
+
+    const context = getLastContext(harness);
+    const toneOptions: ScheduleToneOptions = {
+      tag: "shoot",
+      cooldownSeconds: 0.1,
+      frequency: 720,
+      duration: 0.09,
+      gain: 0.06,
+      type: "square"
+    };
+
+    context.currentTime = 3;
+    engine.scheduleTone(toneOptions);
+
+    const firstOscillator = harness.oscillators[0];
+
+    if (firstOscillator === undefined) {
+      throw new Error("Expected the first oscillator to be scheduled.");
+    }
+
+    expect(context.createOscillator).toHaveBeenCalledTimes(1);
+    expect(context.createGain).toHaveBeenCalledTimes(1);
+    expect(firstOscillator.start).toHaveBeenCalledWith(3);
+
+    engine.scheduleTone(toneOptions);
+
+    expect(context.createOscillator).toHaveBeenCalledTimes(1);
+    expect(context.createGain).toHaveBeenCalledTimes(1);
+
+    context.currentTime += 0.2;
+    engine.scheduleTone(toneOptions);
+
+    expect(context.createOscillator).toHaveBeenCalledTimes(2);
+    expect(context.createGain).toHaveBeenCalledTimes(2);
+  });
+
   it("does not gate consecutive tones when tag is provided without cooldownSeconds", async () => {
     const engine = createAudioEngine({ createContext: harness.createContext });
     await engine.arm();
