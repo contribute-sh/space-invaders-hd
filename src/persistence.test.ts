@@ -216,6 +216,15 @@ describe("createHighScoreStore", () => {
       expect(store.getHighScore()).toBe(0);
     });
 
+    it("keeps the in-memory high score when the first storage write throws", () => {
+      const storage = new FakeStorage();
+      storage.throwOnSet = true;
+      const store = createHighScoreStore(storage);
+
+      expect(store.recordScore(500)).toBe(500);
+      expect(store.getHighScore()).toBe(500);
+    });
+
     it("keeps the in-memory high score when writing the stored high score throws", () => {
       const storage = new FakeStorage();
       storage.seed(HIGH_SCORE_STORAGE_KEY, "220");
