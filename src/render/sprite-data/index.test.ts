@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  INVADER_HEIGHT,
   INVADER_PROJECTILE_HEIGHT,
   INVADER_PROJECTILE_WIDTH,
   INVADER_ROWS,
+  INVADER_WIDTH,
   PROJECTILE_HEIGHT,
   PROJECTILE_WIDTH
 } from "../../game/state";
@@ -45,8 +47,13 @@ function expectSpriteFootprintToMatchHitbox(
     maxRowLength = Math.max(maxRowLength, frameRowLength);
   }
 
-  expect(maxRowLength * descriptor.pixelSize).toBe(expectedWidth);
-  expect(frameRowCount * descriptor.pixelSize).toBe(expectedHeight);
+  const expectedRasterizedWidth =
+    Math.ceil(expectedWidth / descriptor.pixelSize) * descriptor.pixelSize;
+  const expectedRasterizedHeight =
+    Math.ceil(expectedHeight / descriptor.pixelSize) * descriptor.pixelSize;
+
+  expect(maxRowLength * descriptor.pixelSize).toBe(expectedRasterizedWidth);
+  expect(frameRowCount * descriptor.pixelSize).toBe(expectedRasterizedHeight);
 }
 
 describe("SPRITE_DESCRIPTOR_REGISTRY", () => {
@@ -85,6 +92,16 @@ describe("INVADER_ROW_DESCRIPTORS", () => {
 
     for (const [index, descriptor] of INVADER_ROW_DESCRIPTORS.entries()) {
       expect(descriptor.id).toBe(`invader-row-${index}`);
+    }
+  });
+
+  it("matches each invader row sprite footprint to the simulation hitbox", () => {
+    for (const descriptor of INVADER_ROW_DESCRIPTORS) {
+      expectSpriteFootprintToMatchHitbox(
+        descriptor,
+        INVADER_WIDTH,
+        INVADER_HEIGHT
+      );
     }
   });
 });
