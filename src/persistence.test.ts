@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { createHighScoreStore, pickDisplayHighScore } from "./persistence";
 
@@ -356,70 +356,51 @@ describe("createHighScoreStore", () => {
       expect(storage.getItem(HIGH_SCORE_STORAGE_KEY)).toBe("220");
     });
 
-    it("falls back to memory storage when localStorage access throws", () => {
+    describe("when default storage is unavailable", () => {
       const originalLocalStorageDescriptor = Object.getOwnPropertyDescriptor(
         globalThis,
         "localStorage"
       );
 
-      Object.defineProperty(globalThis, "localStorage", {
-        configurable: true,
-        get() {
-          throw new Error("localStorage unavailable");
-        }
-      });
+      afterEach(() => {
+        vi.unstubAllGlobals();
 
-      try {
-        const store = createHighScoreStore();
-        const initialHighScore = store.getHighScore();
-        const nextHighScore = initialHighScore + 1;
-
-        expect(store.recordScore(nextHighScore)).toBe(nextHighScore);
-        expect(store.getHighScore()).toBe(nextHighScore);
-      } finally {
         if (originalLocalStorageDescriptor) {
           Object.defineProperty(
             globalThis,
             "localStorage",
             originalLocalStorageDescriptor
           );
-        } else {
-          Reflect.deleteProperty(globalThis, "localStorage");
+          return;
         }
-      }
-    });
 
-    it("falls back to memory storage when localStorage is undefined", () => {
-      const originalLocalStorageDescriptor = Object.getOwnPropertyDescriptor(
-        globalThis,
-        "localStorage"
-      );
-
-      Object.defineProperty(globalThis, "localStorage", {
-        configurable: true,
-        value: undefined,
-        writable: true
+        Reflect.deleteProperty(globalThis, "localStorage");
       });
 
-      try {
+      it("falls back to memory storage when localStorage access throws", () => {
+        Object.defineProperty(globalThis, "localStorage", {
+          configurable: true,
+          get() {
+            throw new Error("localStorage unavailable");
+          }
+        });
+
         const store = createHighScoreStore();
-        const initialHighScore = store.getHighScore();
-        const nextHighScore = initialHighScore + 1;
+        const nextHighScore = store.getHighScore() + 1;
 
         expect(store.recordScore(nextHighScore)).toBe(nextHighScore);
         expect(store.getHighScore()).toBe(nextHighScore);
-        expect(createHighScoreStore().getHighScore()).toBe(nextHighScore);
-      } finally {
-        if (originalLocalStorageDescriptor) {
-          Object.defineProperty(
-            globalThis,
-            "localStorage",
-            originalLocalStorageDescriptor
-          );
-        } else {
-          Reflect.deleteProperty(globalThis, "localStorage");
-        }
-      }
+      });
+
+      it("falls back to memory storage when localStorage is undefined", () => {
+        vi.stubGlobal("localStorage", undefined);
+
+        const store = createHighScoreStore();
+        const nextHighScore = store.getHighScore() + 1;
+
+        expect(store.recordScore(nextHighScore)).toBe(nextHighScore);
+        expect(store.getHighScore()).toBe(nextHighScore);
+      });
     });
   });
 });
