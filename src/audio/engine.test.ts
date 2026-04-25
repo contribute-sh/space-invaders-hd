@@ -214,21 +214,29 @@ describe("createAudioEngine", () => {
     expect(engine.getStatus()).toBe("ready");
   });
 
-  it.each([
-    {
-      label: "context construction fails",
-      prepare: (mockHarness: MockWebAudioHarness) => {
-        mockHarness.failOnCreate = true;
-      }
-    },
-    {
-      label: "context resume fails",
-      prepare: (mockHarness: MockWebAudioHarness) => {
-        mockHarness.failOnResume = true;
-      }
-    }
-  ])("reports muted when $label", async ({ prepare }) => {
-    prepare(harness);
+  it("reports muted and skips scheduling when context creation fails", async () => {
+    harness.failOnCreate = true;
+    const engine = createAudioEngine({ createContext: harness.createContext });
+
+    await expect(engine.arm()).resolves.toBeUndefined();
+
+    expect(engine.getStatus()).toBe("muted");
+
+    engine.scheduleTone({
+      frequency: 440,
+      duration: 0.1,
+      gain: 0.06,
+      type: "square"
+    });
+
+    expect(harness.createContext).toHaveBeenCalledTimes(1);
+    expect(harness.contexts).toHaveLength(0);
+    expect(harness.oscillators).toHaveLength(0);
+    expect(harness.gains).toHaveLength(0);
+  });
+
+  it("reports muted when context resume fails", async () => {
+    harness.failOnResume = true;
     const engine = createAudioEngine({ createContext: harness.createContext });
 
     await engine.arm();
