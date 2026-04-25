@@ -323,40 +323,44 @@ describe("createAudioEngine", () => {
 
     const context = getLastContext(harness);
 
-    context.currentTime = 1;
+    context.currentTime = 3;
     engine.scheduleTone({
-      tag: "laser",
-      cooldownSeconds: 0.05,
+      tag: "shoot",
+      cooldownSeconds: 0.25,
       frequency: 720,
       duration: 0.09,
       gain: 0.06,
       type: "square"
     });
 
-    const scheduledOscillatorCount = harness.oscillators.length;
+    expect(context.createOscillator).toHaveBeenCalledTimes(1);
+    expect(context.createGain).toHaveBeenCalledTimes(1);
 
+    context.currentTime += 0.1;
     engine.scheduleTone({
-      tag: "laser",
-      cooldownSeconds: 0.05,
+      tag: "shoot",
+      cooldownSeconds: 0.25,
       frequency: 720,
       duration: 0.09,
       gain: 0.06,
       type: "square"
     });
 
-    expect(harness.oscillators).toHaveLength(scheduledOscillatorCount);
+    expect(context.createOscillator).toHaveBeenCalledTimes(1);
+    expect(context.createGain).toHaveBeenCalledTimes(1);
 
-    context.currentTime += 0.051;
+    context.currentTime += 0.2;
     engine.scheduleTone({
-      tag: "laser",
-      cooldownSeconds: 0.05,
+      tag: "shoot",
+      cooldownSeconds: 0.25,
       frequency: 720,
       duration: 0.09,
       gain: 0.06,
       type: "square"
     });
 
-    expect(harness.oscillators).toHaveLength(scheduledOscillatorCount + 1);
+    expect(context.createOscillator).toHaveBeenCalledTimes(2);
+    expect(context.createGain).toHaveBeenCalledTimes(2);
   });
 
   it("applies cooldown suppression independently for each scheduleTone tag", async () => {
