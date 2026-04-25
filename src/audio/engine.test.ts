@@ -171,6 +171,26 @@ describe("createAudioEngine", () => {
     vi.restoreAllMocks();
   });
 
+  describe("AudioEngine.arm idempotency", () => {
+    it("reuses the same audio context across repeated arm calls", async () => {
+      const stableContextHarness = createMockWebAudioHarness("suspended");
+      const stableContext = stableContextHarness.createContext();
+      const createContext = vi
+        .fn<() => MockAudioContext>()
+        .mockReturnValue(stableContext);
+      const engine = createAudioEngine({ createContext });
+
+      await engine.arm();
+
+      expect(engine.getStatus()).toBe("ready");
+
+      await engine.arm();
+
+      expect(createContext).toHaveBeenCalledTimes(1);
+      expect(engine.getStatus()).toBe("ready");
+    });
+  });
+
   it("arms a suspended context once and reuses it across repeated arm calls", async () => {
     const engine = createAudioEngine({ createContext: harness.createContext });
 
