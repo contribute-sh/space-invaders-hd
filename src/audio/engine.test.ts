@@ -274,8 +274,11 @@ describe("createAudioEngine", () => {
     expect(context.createOscillator).toHaveBeenCalledTimes(1);
   });
 
-  it("does not schedule anything while idle", () => {
-    const idleEngine = createAudioEngine({ createContext: harness.createContext });
+  it("does not schedule anything before arm is called", () => {
+    const createContext = vi
+      .fn<() => MockAudioContext>()
+      .mockImplementation(() => harness.createContext());
+    const idleEngine = createAudioEngine({ createContext });
 
     idleEngine.scheduleTone({
       frequency: 440,
@@ -284,9 +287,12 @@ describe("createAudioEngine", () => {
       type: "square"
     });
 
+    expect(createContext).not.toHaveBeenCalled();
+    expect(harness.createContext).not.toHaveBeenCalled();
     expect(harness.contexts).toHaveLength(0);
     expect(harness.oscillators).toHaveLength(0);
     expect(harness.gains).toHaveLength(0);
+    expect(idleEngine.getStatus()).toBe("idle");
   });
 
   describe("AudioEngine.setMuted", () => {
