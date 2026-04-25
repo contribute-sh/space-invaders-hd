@@ -339,6 +339,23 @@ describe("createHighScoreStore", () => {
       expect(storage.getItem(HIGH_SCORE_STORAGE_KEY)).toBe("220");
     });
 
+    it("continues returning the in-memory high score after setItem throws", () => {
+      const storage = new FakeStorage();
+      storage.seed(HIGH_SCORE_STORAGE_KEY, "220");
+      storage.throwOnSet = true;
+      const store = createHighScoreStore(storage);
+      let recordedHighScore = Number.NaN;
+
+      expect(() => {
+        recordedHighScore = store.recordScore(360);
+      }).not.toThrow();
+
+      expect(recordedHighScore).toBe(360);
+      expect(store.getHighScore()).toBe(360);
+      expect(store.getHighScore()).toBe(360);
+      expect(storage.getItem(HIGH_SCORE_STORAGE_KEY)).toBe("220");
+    });
+
     it("falls back to memory storage when localStorage access throws", () => {
       const originalLocalStorageDescriptor = Object.getOwnPropertyDescriptor(
         globalThis,
@@ -359,6 +376,39 @@ describe("createHighScoreStore", () => {
 
         expect(store.recordScore(nextHighScore)).toBe(nextHighScore);
         expect(store.getHighScore()).toBe(nextHighScore);
+      } finally {
+        if (originalLocalStorageDescriptor) {
+          Object.defineProperty(
+            globalThis,
+            "localStorage",
+            originalLocalStorageDescriptor
+          );
+        } else {
+          Reflect.deleteProperty(globalThis, "localStorage");
+        }
+      }
+    });
+
+    it("falls back to memory storage when localStorage is undefined", () => {
+      const originalLocalStorageDescriptor = Object.getOwnPropertyDescriptor(
+        globalThis,
+        "localStorage"
+      );
+
+      Object.defineProperty(globalThis, "localStorage", {
+        configurable: true,
+        value: undefined,
+        writable: true
+      });
+
+      try {
+        const store = createHighScoreStore();
+        const initialHighScore = store.getHighScore();
+        const nextHighScore = initialHighScore + 1;
+
+        expect(store.recordScore(nextHighScore)).toBe(nextHighScore);
+        expect(store.getHighScore()).toBe(nextHighScore);
+        expect(createHighScoreStore().getHighScore()).toBe(nextHighScore);
       } finally {
         if (originalLocalStorageDescriptor) {
           Object.defineProperty(
