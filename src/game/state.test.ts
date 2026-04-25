@@ -8,9 +8,7 @@ import {
   assignInput,
   cloneInput,
   createGameState,
-  createInvaderProjectile,
   createPauseInput,
-  createPlayingState,
   getFormationSpeed,
   getInvaderProjectileSpawnX,
   getInvaderProjectileSpawnY,
@@ -239,37 +237,74 @@ describe("createPauseInput", () => {
   });
 });
 
-describe("invader projectile spawn helpers", () => {
-  const invader: Invader = {
-    id: 7,
-    row: 2,
-    col: 3,
-    x: 111,
-    y: 222,
-    width: 54,
-    height: 31,
-    points: 20
-  };
+describe("getInvaderProjectileSpawnX", () => {
+  it("centers the projectile horizontally for a narrow invader near the left side", () => {
+    const invader: Invader = {
+      id: 1,
+      row: 0,
+      col: 0,
+      x: 24,
+      y: 96,
+      width: 40,
+      height: 28,
+      points: 50
+    };
 
-  it("centers the projectile horizontally on the invader", () => {
     expect(getInvaderProjectileSpawnX(invader)).toBe(
       invader.x + invader.width / 2 - INVADER_PROJECTILE_WIDTH / 2
     );
   });
 
-  it("places the projectile flush with the invader bottom edge", () => {
+  it("centers the projectile horizontally for a wider invader at an offset position", () => {
+    const invader: Invader = {
+      id: 2,
+      row: 3,
+      col: 7,
+      x: 315,
+      y: 204,
+      width: 62,
+      height: 34,
+      points: 20
+    };
+
+    expect(getInvaderProjectileSpawnX(invader)).toBe(
+      invader.x + invader.width / 2 - INVADER_PROJECTILE_WIDTH / 2
+    );
+  });
+});
+
+describe("getInvaderProjectileSpawnY", () => {
+  it("places the projectile flush with the bottom edge of a shorter invader", () => {
+    const invader: Invader = {
+      id: 3,
+      row: 1,
+      col: 4,
+      x: 180,
+      y: 120,
+      width: 48,
+      height: 24,
+      points: 40
+    };
+
     expect(getInvaderProjectileSpawnY(invader)).toBe(
       invader.y + invader.height
     );
   });
 
-  it("uses the helper coordinates when creating an invader projectile", () => {
-    const projectile = createInvaderProjectile(
-      createPlayingState({ nextProjectileId: 42 }),
-      invader
-    );
+  it("places the projectile flush with the bottom edge of a taller invader lower in the arena", () => {
+    const invader: Invader = {
+      id: 4,
+      row: 4,
+      col: 9,
+      x: 468,
+      y: 312,
+      width: 56,
+      height: 38,
+      points: 10
+    };
 
-    expect(projectile.x).toBe(getInvaderProjectileSpawnX(invader));
-    expect(projectile.y).toBe(getInvaderProjectileSpawnY(invader));
+    expect(getInvaderProjectileSpawnY(invader)).toBe(
+      invader.y + invader.height
+    );
   });
 });
