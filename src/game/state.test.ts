@@ -254,6 +254,143 @@ describe("getPlayerMaxX", () => {
   });
 });
 
+describe("getPlayerMinX", () => {
+  it("returns arena.padding for a typical arena", () => {
+    const arena = {
+      width: 800,
+      height: 600,
+      floorY: 560,
+      padding: 24
+    } satisfies Arena;
+
+    expect(getPlayerMinX(arena)).toBe(24);
+  });
+
+  it("returns 0 when arena.padding is 0", () => {
+    const arena = {
+      width: 800,
+      height: 600,
+      floorY: 560,
+      padding: 0
+    } satisfies Arena;
+
+    expect(getPlayerMinX(arena)).toBe(0);
+  });
+
+  it("depends only on padding and ignores arena width, height, and floorY", () => {
+    const compactArena = {
+      width: 800,
+      height: 600,
+      floorY: 560,
+      padding: 24
+    } satisfies Arena;
+    const oversizedArena = {
+      width: 1280,
+      height: 900,
+      floorY: 840,
+      padding: 24
+    } satisfies Arena;
+
+    expect(getPlayerMinX(compactArena)).toBe(24);
+    expect(getPlayerMinX(oversizedArena)).toBe(24);
+  });
+});
+
+describe("getPlayerMaxX", () => {
+  it("returns the rightmost x for a typical arena and player", () => {
+    const arena = {
+      width: 800,
+      height: 600,
+      floorY: 560,
+      padding: 24
+    } satisfies Arena;
+    const player = {
+      x: 384,
+      y: 528,
+      width: 32,
+      height: 32,
+      speed: 420,
+      shootCooldownMs: 0,
+      invulnerableUntilMs: 0
+    } satisfies Player;
+
+    expect(getPlayerMaxX(arena, player)).toBe(744);
+  });
+
+  it("shrinks by exactly the player width delta as the player gets wider", () => {
+    const arena = {
+      width: 800,
+      height: 600,
+      floorY: 560,
+      padding: 24
+    } satisfies Arena;
+    const narrowPlayer = {
+      x: 384,
+      y: 528,
+      width: 32,
+      height: 32,
+      speed: 420,
+      shootCooldownMs: 0,
+      invulnerableUntilMs: 0
+    } satisfies Player;
+    const widePlayer = {
+      x: 378,
+      y: 528,
+      width: 44,
+      height: 32,
+      speed: 420,
+      shootCooldownMs: 0,
+      invulnerableUntilMs: 0
+    } satisfies Player;
+
+    expect(getPlayerMaxX(arena, narrowPlayer)).toBe(744);
+    expect(getPlayerMaxX(arena, widePlayer)).toBe(732);
+    expect(getPlayerMaxX(arena, narrowPlayer) - getPlayerMaxX(arena, widePlayer)).toBe(12);
+  });
+
+  it("ignores right-side padding when arena.padding is 0", () => {
+    const arena = {
+      width: 800,
+      height: 600,
+      floorY: 560,
+      padding: 0
+    } satisfies Arena;
+    const player = {
+      x: 384,
+      y: 528,
+      width: 32,
+      height: 32,
+      speed: 420,
+      shootCooldownMs: 0,
+      invulnerableUntilMs: 0
+    } satisfies Player;
+
+    expect(getPlayerMaxX(arena, player)).toBe(768);
+  });
+
+  it("stays strictly greater than getPlayerMinX for a normal-sized player", () => {
+    const arena = {
+      width: 800,
+      height: 600,
+      floorY: 560,
+      padding: 24
+    } satisfies Arena;
+    const player = {
+      x: 384,
+      y: 528,
+      width: 32,
+      height: 32,
+      speed: 420,
+      shootCooldownMs: 0,
+      invulnerableUntilMs: 0
+    } satisfies Player;
+
+    expect(getPlayerMinX(arena)).toBe(24);
+    expect(getPlayerMaxX(arena, player)).toBe(744);
+    expect(getPlayerMaxX(arena, player)).toBeGreaterThan(getPlayerMinX(arena));
+  });
+});
+
 describe("EMPTY_INPUT", () => {
   it("uses neutral defaults for every field", () => {
     expect(EMPTY_INPUT.moveX).toBe(0);
