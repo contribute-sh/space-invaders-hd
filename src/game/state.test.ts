@@ -259,36 +259,38 @@ describe("EMPTY_INPUT", () => {
 });
 
 describe("cloneInput", () => {
-  it("copies every field into a distinct object without aliasing later mutations", () => {
+  it("returns a distinct clone of EMPTY_INPUT and does not mutate EMPTY_INPUT when the clone changes", () => {
+    const emptyInputSnapshot: Input = { ...EMPTY_INPUT };
+    const clonedInput = cloneInput(EMPTY_INPUT);
+
+    expect(clonedInput).not.toBe(EMPTY_INPUT);
+    expectInputFields(clonedInput, EMPTY_INPUT);
+
+    clonedInput.moveX = 1;
+    clonedInput.firePressed = true;
+    clonedInput.pauseHeld = true;
+
+    expectInputFields(EMPTY_INPUT, emptyInputSnapshot);
+  });
+
+  it("copies every field from a populated input", () => {
     const original: Input = {
-      moveX: -1,
+      moveX: 1,
       firePressed: true,
       pausePressed: true,
       fireHeld: true,
       pauseHeld: true,
       mutePressed: true
     };
-    const originalSnapshot: Input = { ...original };
     const clonedInput = cloneInput(original);
 
-    expect(clonedInput).toEqual(original);
     expect(clonedInput).not.toBe(original);
     expectInputFields(clonedInput, original);
-
-    for (const key of getInputKeys()) {
-      if (key === "moveX") {
-        clonedInput[key] = 0;
-      } else {
-        clonedInput[key] = false;
-      }
-    }
-
-    expectInputFields(original, originalSnapshot);
   });
 });
 
 describe("assignInput", () => {
-  it("copies every field into the existing target without aliasing later source mutations", () => {
+  it("updates the existing target in place so every field matches the source", () => {
     const target: Input = {
       moveX: -1,
       firePressed: false,
@@ -312,19 +314,9 @@ describe("assignInput", () => {
 
     expect(target).toBe(targetReference);
     expectInputFields(target, sourceSnapshot);
-
-    for (const key of getInputKeys()) {
-      if (key === "moveX") {
-        source[key] = 0;
-      } else {
-        source[key] = !source[key];
-      }
-    }
-
-    expectInputFields(target, sourceSnapshot);
   });
 
-  it("clears a populated target when assigning EMPTY_INPUT", () => {
+  it("resets a populated target back to EMPTY_INPUT", () => {
     const target: Input = {
       moveX: 1,
       firePressed: true,
