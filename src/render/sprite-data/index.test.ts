@@ -4,6 +4,8 @@ import {
   INVADER_PROJECTILE_HEIGHT,
   INVADER_PROJECTILE_WIDTH,
   INVADER_ROWS,
+  PLAYER_HEIGHT,
+  PLAYER_WIDTH,
   PROJECTILE_HEIGHT,
   PROJECTILE_WIDTH
 } from "../../game/state";
@@ -12,6 +14,7 @@ import type { SpriteDescriptor } from "../sprites";
 import {
   INVADER_PROJECTILE_DESCRIPTOR,
   INVADER_ROW_DESCRIPTORS,
+  PLAYER_SHIP_DESCRIPTOR,
   PLAYER_PROJECTILE_DESCRIPTOR,
   SHIELD_CELL_DESCRIPTOR,
   SPRITE_DESCRIPTOR_REGISTRY
@@ -86,6 +89,16 @@ describe("INVADER_ROW_DESCRIPTORS", () => {
     for (const [index, descriptor] of INVADER_ROW_DESCRIPTORS.entries()) {
       expect(descriptor.id).toBe(`invader-row-${index}`);
     }
+  });
+});
+
+describe("player ship sprite footprint", () => {
+  it.skip("matches the player ship sprite dimensions to the simulation hitbox", () => {
+    expectSpriteFootprintToMatchHitbox(
+      PLAYER_SHIP_DESCRIPTOR,
+      PLAYER_WIDTH,
+      PLAYER_HEIGHT
+    );
   });
 });
 
