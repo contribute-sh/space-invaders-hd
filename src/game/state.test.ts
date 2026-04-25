@@ -51,16 +51,28 @@ describe("getFormationSpeed", () => {
     expect(getFormationSpeed(99, waveStartSpeed, 10)).toBe(waveStartSpeed);
   });
 
-  it("treats negative invaderCount as a fully cleared formation", () => {
-    const waveStartSpeed = FORMATION_SPEED_BASE * 2;
-
-    expect(getFormationSpeed(-1, waveStartSpeed, 10)).toBe(
+  it("returns the per-wave max speed when invaderCount is zero or negative", () => {
+    const waveStartSpeed = FORMATION_SPEED_BASE;
+    const expectedWaveMaxSpeed = Math.min(
+      waveStartSpeed * expectedKillMultiplier,
       FORMATION_SPEED_MAX
+    );
+
+    expect(getFormationSpeed(0, waveStartSpeed, 10)).toBeCloseTo(
+      expectedWaveMaxSpeed
+    );
+    expect(getFormationSpeed(-1, waveStartSpeed, 10)).toBeCloseTo(
+      expectedWaveMaxSpeed
     );
   });
 
-  it("caps waveStartSpeed at FORMATION_SPEED_MAX before scaling when all invaders are alive", () => {
-    expect(getFormationSpeed(10, FORMATION_SPEED_MAX * 2, 10)).toBe(
+  it("caps an over-max waveStartSpeed to FORMATION_SPEED_MAX at both the start and clear states", () => {
+    const waveStartSpeed = FORMATION_SPEED_MAX * 1.5;
+
+    expect(getFormationSpeed(10, waveStartSpeed, 10)).toBe(
+      FORMATION_SPEED_MAX
+    );
+    expect(getFormationSpeed(0, waveStartSpeed, 10)).toBe(
       FORMATION_SPEED_MAX
     );
   });
@@ -75,14 +87,6 @@ describe("getFormationSpeed", () => {
     const waveStartSpeed = 100;
 
     expect(getFormationSpeed(10, waveStartSpeed, 10)).toBe(waveStartSpeed);
-  });
-
-  it("uses the uncapped kill multiplier when no invaders remain and the scaled speed stays below the cap", () => {
-    const waveStartSpeed = 100;
-
-    expect(getFormationSpeed(0, waveStartSpeed, 10)).toBeCloseTo(
-      waveStartSpeed * expectedKillMultiplier
-    );
   });
 
   it("clamps the fully cleared formation speed to FORMATION_SPEED_MAX when the kill multiplier would exceed it", () => {
@@ -100,18 +104,22 @@ describe("getFormationSpeed", () => {
   it("returns the linearly interpolated halfway speed between the wave start and fully cleared speeds", () => {
     const totalInvaders = 10;
     const invaderCount = totalInvaders / 2;
-    const waveStartSpeed = 100;
-    const fullyClearedSpeed = waveStartSpeed * expectedKillMultiplier;
+    const waveStartSpeed = FORMATION_SPEED_BASE;
+    const fullyClearedSpeed = Math.min(
+      waveStartSpeed * expectedKillMultiplier,
+      FORMATION_SPEED_MAX
+    );
     const halfwaySpeed = getFormationSpeed(
       invaderCount,
       waveStartSpeed,
       totalInvaders
     );
 
+    expect(fullyClearedSpeed).toBeLessThan(FORMATION_SPEED_MAX);
     expect(halfwaySpeed).toBeGreaterThan(waveStartSpeed);
     expect(halfwaySpeed).toBeLessThan(fullyClearedSpeed);
     expect(halfwaySpeed).toBeCloseTo(
-      waveStartSpeed + (fullyClearedSpeed - waveStartSpeed) / 2
+      (waveStartSpeed + fullyClearedSpeed) / 2
     );
   });
 
