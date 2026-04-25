@@ -185,6 +185,34 @@ describe("createAudioEngine", () => {
     expect(engine.getStatus()).toBe("ready");
   });
 
+  it("resumes a suspended context during arm and reports ready", async () => {
+    const suspendedHarness = createMockWebAudioHarness("suspended");
+    const engine = createAudioEngine({
+      createContext: suspendedHarness.createContext
+    });
+
+    await engine.arm();
+
+    const context = getLastContext(suspendedHarness);
+
+    expect(context.resume).toHaveBeenCalledTimes(1);
+    expect(engine.getStatus()).toBe("ready");
+  });
+
+  it("skips resume for a running context during arm and reports ready", async () => {
+    const runningHarness = createMockWebAudioHarness("running");
+    const engine = createAudioEngine({
+      createContext: runningHarness.createContext
+    });
+
+    await engine.arm();
+
+    const context = getLastContext(runningHarness);
+
+    expect(context.resume).toHaveBeenCalledTimes(0);
+    expect(engine.getStatus()).toBe("ready");
+  });
+
   it.each([
     {
       label: "context construction fails",
