@@ -4,11 +4,16 @@ import {
   EMPTY_INPUT,
   FORMATION_SPEED_BASE,
   FORMATION_SPEED_MAX,
+  INVADER_PROJECTILE_HEIGHT,
+  INVADER_PROJECTILE_SPEED,
   INVADER_PROJECTILE_WIDTH,
   assignInput,
   cloneInput,
+  createInvaderProjectile,
   createGameState,
   createPauseInput,
+  createPlayerProjectile,
+  createPlayingState,
   getFormationSpeed,
   getInvaderProjectileSpawnX,
   getInvaderProjectileSpawnY,
@@ -17,6 +22,7 @@ import {
   getPlayerMaxX,
   getPlayerMinX,
   PROJECTILE_HEIGHT,
+  PROJECTILE_SPEED,
   PROJECTILE_WIDTH,
   type Arena,
   type Invader,
@@ -504,5 +510,118 @@ describe("getInvaderProjectileSpawnY", () => {
     expect(getInvaderProjectileSpawnY(invader)).toBe(
       invader.y + invader.height
     );
+  });
+});
+
+describe("createPlayerProjectile", () => {
+  it("creates an active player projectile from the helper-based spawn point", () => {
+    const state = createPlayingState({ nextProjectileId: 41 });
+    const player: Player = {
+      ...state.player,
+      x: 128,
+      y: 592
+    };
+    const spawnX = getProjectileSpawnX(player);
+    const spawnY = getProjectileSpawnY(player);
+
+    const projectile = createPlayerProjectile(state, spawnX, spawnY);
+
+    expect(projectile).toEqual({
+      id: state.nextProjectileId,
+      owner: "player",
+      x: spawnX,
+      y: spawnY,
+      width: PROJECTILE_WIDTH,
+      height: PROJECTILE_HEIGHT,
+      velocityY: PROJECTILE_SPEED,
+      active: true
+    });
+    expect(Math.abs(projectile.velocityY)).toBe(Math.abs(PROJECTILE_SPEED));
+    expect(projectile.velocityY).toBeLessThan(0);
+  });
+
+  it("preserves a second player's computed spawn coordinates without hard-coding them", () => {
+    const state = createPlayingState({ nextProjectileId: 84 });
+    const player: Player = {
+      ...state.player,
+      x: 304,
+      y: 548,
+      width: PROJECTILE_WIDTH
+    };
+    const spawnX = getProjectileSpawnX(player);
+    const spawnY = getProjectileSpawnY(player);
+
+    const projectile = createPlayerProjectile(state, spawnX, spawnY);
+
+    expect(projectile.id).toBe(state.nextProjectileId);
+    expect(projectile.owner).toBe("player");
+    expect(projectile.active).toBe(true);
+    expect(projectile.width).toBe(PROJECTILE_WIDTH);
+    expect(projectile.height).toBe(PROJECTILE_HEIGHT);
+    expect(projectile.x).toBe(getProjectileSpawnX(player));
+    expect(projectile.y).toBe(getProjectileSpawnY(player));
+    expect(Math.abs(projectile.velocityY)).toBe(Math.abs(PROJECTILE_SPEED));
+    expect(projectile.velocityY).toBeLessThan(0);
+  });
+});
+
+describe("createInvaderProjectile", () => {
+  it("creates an active invader projectile from the current invader spawn point", () => {
+    const state = createGameState({ nextProjectileId: 12 });
+    const invader: Invader = {
+      id: 7,
+      row: 0,
+      col: 2,
+      x: 144,
+      y: 108,
+      width: 48,
+      height: 30,
+      points: 50
+    };
+
+    const projectile = createInvaderProjectile(state, invader);
+
+    expect(projectile).toEqual({
+      id: state.nextProjectileId,
+      owner: "invader",
+      x: getInvaderProjectileSpawnX(invader),
+      y: getInvaderProjectileSpawnY(invader),
+      width: INVADER_PROJECTILE_WIDTH,
+      height: INVADER_PROJECTILE_HEIGHT,
+      velocityY: INVADER_PROJECTILE_SPEED,
+      active: true
+    });
+    expect(Math.abs(projectile.velocityY)).toBe(
+      Math.abs(INVADER_PROJECTILE_SPEED)
+    );
+    expect(projectile.velocityY).toBeGreaterThan(0);
+  });
+
+  it("uses the same spawn helpers for a lower-row invader at an offset position", () => {
+    const state = createGameState({ nextProjectileId: 99 });
+    const invader: Invader = {
+      id: 28,
+      row: 4,
+      col: 9,
+      x: 468,
+      y: 312,
+      width: 56,
+      height: 38,
+      points: 10
+    };
+
+    const projectile = createInvaderProjectile(state, invader);
+
+    expect(projectile.id).toBe(state.nextProjectileId);
+    expect(projectile.owner).toBe("invader");
+    expect(projectile.active).toBe(true);
+    expect(projectile.width).toBe(INVADER_PROJECTILE_WIDTH);
+    expect(projectile.height).toBe(INVADER_PROJECTILE_HEIGHT);
+    expect(projectile.x).toBe(getInvaderProjectileSpawnX(invader));
+    expect(projectile.y).toBe(getInvaderProjectileSpawnY(invader));
+    expect(Math.abs(projectile.velocityY)).toBe(
+      Math.abs(INVADER_PROJECTILE_SPEED)
+    );
+    expect(projectile.velocityY).toBeGreaterThan(0);
   });
 });
