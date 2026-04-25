@@ -314,6 +314,31 @@ describe("createKeyboardController", () => {
     });
   });
 
+  it("removes the keydown and keyup listeners on dispose", () => {
+    const target = createTarget();
+    const controller = createKeyboardController(target);
+
+    controller.dispose();
+
+    const leftKeyDownEvent = dispatchKeyDown(target, "ArrowLeft");
+    const leftKeyUpEvent = dispatchKeyUp(target, "ArrowLeft");
+    const fireKeyDownEvent = dispatchKeyDown(target, "Space");
+    const fireKeyUpEvent = dispatchKeyUp(target, "Space");
+
+    expect(leftKeyDownEvent.defaultPrevented).toBe(false);
+    expect(leftKeyUpEvent.defaultPrevented).toBe(false);
+    expect(fireKeyDownEvent.defaultPrevented).toBe(false);
+    expect(fireKeyUpEvent.defaultPrevented).toBe(false);
+    expect(controller.snapshot()).toEqual({
+      moveX: 0,
+      firePressed: false,
+      pausePressed: false,
+      fireHeld: false,
+      pauseHeld: false,
+      mutePressed: false
+    });
+  });
+
   it("removes the blur listener on dispose", () => {
     const target = createTarget();
     const controller = createKeyboardController(target);
