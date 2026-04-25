@@ -12,8 +12,12 @@ import {
   getFormationSpeed,
   getInvaderProjectileSpawnX,
   getInvaderProjectileSpawnY,
+  getPlayerMaxX,
+  getPlayerMinX,
+  type Arena,
   type Invader,
-  type Input
+  type Input,
+  type Player
 } from "./state";
 import { step } from "./step";
 
@@ -118,6 +122,122 @@ describe("getFormationSpeed", () => {
       expect(currentSpeed).toBeGreaterThanOrEqual(previousSpeed);
       previousSpeed = currentSpeed;
     }
+  });
+});
+
+describe("getPlayerMinX", () => {
+  it("returns the arena padding", () => {
+    const arena: Arena = {
+      width: 960,
+      height: 720,
+      floorY: 664,
+      padding: 56
+    };
+
+    expect(getPlayerMinX(arena)).toBe(arena.padding);
+  });
+
+  it("shifts upward when arena padding increases", () => {
+    const tightArena: Arena = {
+      width: 960,
+      height: 720,
+      floorY: 664,
+      padding: 32
+    };
+    const paddedArena: Arena = {
+      width: 960,
+      height: 720,
+      floorY: 664,
+      padding: 80
+    };
+
+    expect(getPlayerMinX(paddedArena)).toBe(getPlayerMinX(tightArena) + 48);
+  });
+});
+
+describe("getPlayerMaxX", () => {
+  it("returns arena.width minus padding and player width", () => {
+    const arena: Arena = {
+      width: 960,
+      height: 720,
+      floorY: 664,
+      padding: 56
+    };
+    const player: Player = {
+      x: 442,
+      y: 634,
+      width: 76,
+      height: 30,
+      speed: 420,
+      shootCooldownMs: 0,
+      invulnerableUntilMs: 0
+    };
+
+    expect(getPlayerMaxX(arena, player)).toBe(
+      arena.width - arena.padding - player.width
+    );
+  });
+
+  it("reduces the maximum x by the player width delta for a wider player", () => {
+    const arena: Arena = {
+      width: 960,
+      height: 720,
+      floorY: 664,
+      padding: 56
+    };
+    const narrowPlayer: Player = {
+      x: 448,
+      y: 634,
+      width: 64,
+      height: 30,
+      speed: 420,
+      shootCooldownMs: 0,
+      invulnerableUntilMs: 0
+    };
+    const widePlayer: Player = {
+      x: 436,
+      y: 634,
+      width: 88,
+      height: 30,
+      speed: 420,
+      shootCooldownMs: 0,
+      invulnerableUntilMs: 0
+    };
+    const widthDelta = widePlayer.width - narrowPlayer.width;
+
+    expect(getPlayerMaxX(arena, narrowPlayer) - getPlayerMaxX(arena, widePlayer)).toBe(widthDelta);
+  });
+
+  it("shifts downward symmetrically when arena padding increases", () => {
+    const player: Player = {
+      x: 442,
+      y: 634,
+      width: 76,
+      height: 30,
+      speed: 420,
+      shootCooldownMs: 0,
+      invulnerableUntilMs: 0
+    };
+    const tightArena: Arena = {
+      width: 960,
+      height: 720,
+      floorY: 664,
+      padding: 32
+    };
+    const paddedArena: Arena = {
+      width: 960,
+      height: 720,
+      floorY: 664,
+      padding: 80
+    };
+    const paddingDelta = paddedArena.padding - tightArena.padding;
+
+    expect(getPlayerMinX(paddedArena) - getPlayerMinX(tightArena)).toBe(
+      paddingDelta
+    );
+    expect(
+      getPlayerMaxX(tightArena, player) - getPlayerMaxX(paddedArena, player)
+    ).toBe(paddingDelta);
   });
 });
 
