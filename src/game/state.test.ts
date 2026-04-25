@@ -12,8 +12,12 @@ import {
   getFormationSpeed,
   getInvaderProjectileSpawnX,
   getInvaderProjectileSpawnY,
+  getProjectileSpawnX,
+  getProjectileSpawnY,
   getPlayerMaxX,
   getPlayerMinX,
+  PROJECTILE_HEIGHT,
+  PROJECTILE_WIDTH,
   type Arena,
   type Invader,
   type Input,
@@ -354,6 +358,85 @@ describe("createPauseInput", () => {
     const next = advancePausedState();
 
     expect(next.state).toEqual(expect.objectContaining({ phase: "playing" }));
+  });
+});
+
+describe("getProjectileSpawnX", () => {
+  it("centers a projectile on a wider player using the exact width-based formula", () => {
+    const player = {
+      x: 442,
+      y: 634,
+      width: 76,
+      height: 30,
+      speed: 420,
+      shootCooldownMs: 0,
+      invulnerableUntilMs: 0
+    } satisfies Player;
+
+    expect(getProjectileSpawnX(player)).toBe(
+      player.x + (player.width - PROJECTILE_WIDTH) / 2
+    );
+  });
+
+  it("returns the player's x unchanged when the player width matches the projectile width", () => {
+    const player = {
+      x: 180,
+      y: 320,
+      width: PROJECTILE_WIDTH,
+      height: 30,
+      speed: 420,
+      shootCooldownMs: 0,
+      invulnerableUntilMs: 0
+    } satisfies Player;
+
+    expect(getProjectileSpawnX(player)).toBe(player.x);
+  });
+
+  it("returns a spawn x left of the player when the player is narrower than the projectile", () => {
+    const player = {
+      x: 120,
+      y: 320,
+      width: PROJECTILE_WIDTH - 2,
+      height: 30,
+      speed: 420,
+      shootCooldownMs: 0,
+      invulnerableUntilMs: 0
+    } satisfies Player;
+
+    expect(getProjectileSpawnX(player)).toBe(
+      player.x + (player.width - PROJECTILE_WIDTH) / 2
+    );
+    expect(getProjectileSpawnX(player)).toBeLessThan(player.x);
+  });
+});
+
+describe("getProjectileSpawnY", () => {
+  it("places a player projectile flush above the player's top edge", () => {
+    const player = {
+      x: 442,
+      y: 634,
+      width: 76,
+      height: 30,
+      speed: 420,
+      shootCooldownMs: 0,
+      invulnerableUntilMs: 0
+    } satisfies Player;
+
+    expect(getProjectileSpawnY(player)).toBe(player.y - PROJECTILE_HEIGHT);
+  });
+
+  it("does not clamp a player at y zero", () => {
+    const player = {
+      x: 180,
+      y: 0,
+      width: 76,
+      height: 30,
+      speed: 420,
+      shootCooldownMs: 0,
+      invulnerableUntilMs: 0
+    } satisfies Player;
+
+    expect(getProjectileSpawnY(player)).toBe(-PROJECTILE_HEIGHT);
   });
 });
 
