@@ -310,6 +310,64 @@ describe("createHighScoreStore", () => {
     }
   );
 
+  describe("createHighScoreStore.recordScore", () => {
+    const parseSetItemCalls = (
+      storage: FakeStorage
+    ): Array<{ key: string; value: number }> =>
+      storage.setItemCalls.map(({ key, value }) => ({
+        key,
+        value: Number(value)
+      }));
+
+    it("persists a strictly higher score and returns the new high score", () => {
+      const storage = new FakeStorage();
+      storage.seed(HIGH_SCORE_STORAGE_KEY, "220");
+      const store = createHighScoreStore(storage);
+
+      expect(store.recordScore(360)).toBe(360);
+      expect(parseSetItemCalls(storage)).toEqual([
+        { key: HIGH_SCORE_STORAGE_KEY, value: 360 }
+      ]);
+    });
+
+    it("returns the existing high score without writing for lower or equal scores", () => {
+      const storage = new FakeStorage();
+      storage.seed(HIGH_SCORE_STORAGE_KEY, "220");
+      const store = createHighScoreStore(storage);
+
+      expect(store.recordScore(360)).toBe(360);
+      const setItemCallsAfterNewRecord = parseSetItemCalls(storage);
+
+      expect(setItemCallsAfterNewRecord).toEqual([
+        { key: HIGH_SCORE_STORAGE_KEY, value: 360 }
+      ]);
+
+      expect(store.recordScore(359)).toBe(360);
+      expect(parseSetItemCalls(storage)).toEqual(setItemCallsAfterNewRecord);
+
+      expect(store.recordScore(360)).toBe(360);
+      expect(parseSetItemCalls(storage)).toEqual(setItemCallsAfterNewRecord);
+    });
+
+    it("keeps the bumped high score in memory when persisting throws", () => {
+      const storage = new FakeStorage();
+      storage.seed(HIGH_SCORE_STORAGE_KEY, "220");
+      storage.throwOnSet = true;
+      const store = createHighScoreStore(storage);
+      let recordedHighScore = Number.NaN;
+
+      expect(() => {
+        recordedHighScore = store.recordScore(360);
+      }).not.toThrow();
+
+      expect(recordedHighScore).toBe(360);
+      expect(store.recordScore(360)).toBe(360);
+      expect(store.recordScore(300)).toBe(360);
+      expect(parseSetItemCalls(storage)).toEqual([]);
+      expect(storage.getItem(HIGH_SCORE_STORAGE_KEY)).toBe("220");
+    });
+  });
+
   describe("when storage throws", () => {
     it("returns 0 when reading the stored high score throws", () => {
       const storage = new FakeStorage();
